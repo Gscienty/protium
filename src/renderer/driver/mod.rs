@@ -24,3 +24,13 @@ pub type VertexArrayID = usize;
 pub type UniformLocationID = usize;
 
 pub use color_space::ColorSpace;
+
+pub(super) use blend::{BLEND_CLEAR, BLEND_COPY, BLEND_DEFAULT, BLEND_SOURCE_OVER, Blend};
+pub(super) use dst_region::DstRegion;
+pub(super) use fill_rule::FillRule;
+pub(super) use glprogram::{GLVertexEntity, GLVertexLayout, GLVertexLayoutPart};
+pub(super) use graphics::Graphics;
+pub(crate) use image::Image;
+pub(crate) use pixels_args::PixelsArgs;
+pub(super) use shader::Shader;
+pub(crate) use shader_type::{ShaderBasicType, ShaderType};

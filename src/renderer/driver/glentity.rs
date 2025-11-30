@@ -1,11 +1,11 @@
-use std::{collections, sync};
+use std::{cell, collections, sync};
 
 pub(super) struct GLEntityMap<T>
 where
     T: Eq,
 {
-    data: sync::RwLock<collections::HashMap<usize, T>>,
-    last_id: sync::Mutex<usize>,
+    data: cell::RefCell<collections::HashMap<usize, T>>,
+    last_id: sync::atomic::AtomicUsize,
 }
 
 impl<T> GLEntityMap<T>
@@ -14,8 +14,8 @@ where
 {
     pub(super) fn new() -> Self {
         Self {
-            data: sync::RwLock::new(collections::HashMap::new()),
-            last_id: sync::Mutex::new(1),
+            data: cell::RefCell::new(collections::HashMap::new()),
+            last_id: sync::atomic::AtomicUsize::new(1),
         }
     }
 
@@ -25,7 +25,7 @@ where
             return 0;
         }
 
-        let Ok(mut data) = self.data.write() else {
+        let Ok(mut data) = self.data.try_borrow_mut() else {
             return 0;
         };
         data.insert(id, value);
@@ -34,7 +34,7 @@ where
     }
 
     pub(super) fn remove(&self, key: usize) -> Option<T> {
-        let Ok(mut data) = self.data.write() else {
+        let Ok(mut data) = self.data.try_borrow_mut() else {
             return None;
         };
 
@@ -53,7 +53,7 @@ where
     where
         F: FnOnce(&T),
     {
-        let Ok(data) = self.data.read() else {
+        let Ok(data) = self.data.try_borrow() else {
             return false;
         };
 
@@ -66,7 +66,7 @@ where
     }
 
     pub(super) fn get_entity_id(&self, value: &T) -> Option<usize> {
-        let Ok(data) = self.data.read() else {
+        let Ok(data) = self.data.try_borrow() else {
             return None;
         };
 
@@ -76,13 +76,6 @@ where
     }
 
     fn generate_id(&self) -> usize {
-        let Ok(mut last_id_guard) = self.last_id.lock() else {
-            return 0;
-        };
-
-        let id = *last_id_guard;
-        *last_id_guard += 1;
-
-        id
+        self.last_id.fetch_add(1, sync::atomic::Ordering::SeqCst)
     }
 }

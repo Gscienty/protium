@@ -1,4 +1,4 @@
-use std::{mem, ptr, sync};
+use std::{cell, mem, ptr};
 
 use crate::utils;
 
@@ -20,7 +20,7 @@ struct GraphicsContextData {
 pub(super) struct GraphicsContext {
     location_cache: location_cache::LocationCache,
 
-    data: sync::RwLock<GraphicsContextData>,
+    data: cell::RefCell<GraphicsContextData>,
 }
 
 pub(super) const INVALID_FRAMEBUFFER: FramebufferID = 0xFFFFFFFF;
@@ -30,7 +30,7 @@ impl GraphicsContext {
         Self {
             location_cache: location_cache::LocationCache::new(),
 
-            data: sync::RwLock::new(GraphicsContextData {
+            data: cell::RefCell::new(GraphicsContextData {
                 screen_framebuffer: 0,
                 last_framebuffer: 0,
                 last_texture: 0,
@@ -43,7 +43,7 @@ impl GraphicsContext {
     }
 
     pub(super) fn get_screen_framebuffer(&self) -> FramebufferID {
-        let Ok(data) = self.data.read() else {
+        let Ok(data) = self.data.try_borrow() else {
             return 0;
         };
 
@@ -51,7 +51,7 @@ impl GraphicsContext {
     }
 
     pub(super) fn bind_texture(&self, hdr: &glhandler::GLHandler, texture: TextureID) {
-        let Ok(mut data) = self.data.write() else {
+        let Ok(mut data) = self.data.try_borrow_mut() else {
             return;
         };
 
@@ -67,7 +67,7 @@ impl GraphicsContext {
         hdr: &glhandler::GLHandler,
         renderbuffer: RenderbufferID,
     ) {
-        let Ok(mut data) = self.data.write() else {
+        let Ok(mut data) = self.data.try_borrow_mut() else {
             return;
         };
 
@@ -79,7 +79,7 @@ impl GraphicsContext {
     }
 
     pub(super) fn bind_framebuffer(&self, hdr: &glhandler::GLHandler, framebuffer: FramebufferID) {
-        let Ok(mut data) = self.data.write() else {
+        let Ok(mut data) = self.data.try_borrow_mut() else {
             return;
         };
 
@@ -97,7 +97,7 @@ impl GraphicsContext {
         width: i32,
         height: i32,
     ) {
-        let Ok(mut data) = self.data.write() else {
+        let Ok(mut data) = self.data.try_borrow_mut() else {
             return;
         };
 
@@ -105,7 +105,9 @@ impl GraphicsContext {
             hdr.bind_framebuffer(web_sys::WebGl2RenderingContext::FRAMEBUFFER, framebuffer);
             data.last_framebuffer = framebuffer;
         }
-
+        if data.last_viewport_width == width && data.last_viewport_height == height {
+            return;
+        }
         hdr.viewpoint(0, 0, width, height);
 
         if framebuffer == data.screen_framebuffer {
@@ -118,7 +120,7 @@ impl GraphicsContext {
     }
 
     pub(super) fn new_screen_framebuffer(&self) -> FramebufferID {
-        let Ok(data) = self.data.read() else {
+        let Ok(data) = self.data.try_borrow() else {
             return INVALID_FRAMEBUFFER;
         };
         data.screen_framebuffer
@@ -132,7 +134,7 @@ impl GraphicsContext {
 
         self.blend(hdr, blend::BLEND_DEFAULT);
 
-        let Ok(mut data) = self.data.write() else {
+        let Ok(mut data) = self.data.try_borrow_mut() else {
             return;
         };
 
@@ -146,14 +148,14 @@ impl GraphicsContext {
     }
 
     pub(super) fn reset_last_texture(&self) {
-        let Ok(mut data) = self.data.write() else {
+        let Ok(mut data) = self.data.try_borrow_mut() else {
             return;
         };
         data.last_texture = 0;
     }
 
     pub(super) fn blend(&self, hdr: &glhandler::GLHandler, blend: blend::Blend) {
-        let Ok(mut data) = self.data.write() else {
+        let Ok(mut data) = self.data.try_borrow_mut() else {
             return;
         };
 
@@ -252,7 +254,7 @@ impl GraphicsContext {
     pub(super) fn delete_texture(&self, hdr: &glhandler::GLHandler, texture: TextureID) {
         hdr.delete_texture(texture);
 
-        let Ok(mut data) = self.data.write() else {
+        let Ok(mut data) = self.data.try_borrow_mut() else {
             return;
         };
         if data.last_texture == texture {
@@ -291,7 +293,7 @@ impl GraphicsContext {
     ) {
         hdr.delete_renderbuffer(renderbuffer);
 
-        let Ok(mut data) = self.data.write() else {
+        let Ok(mut data) = self.data.try_borrow_mut() else {
             return;
         };
         if data.last_renderbuffer == renderbuffer {
@@ -343,7 +345,7 @@ impl GraphicsContext {
         hdr: &glhandler::GLHandler,
         framebuffer: FramebufferID,
     ) {
-        let Ok(mut data) = self.data.write() else {
+        let Ok(mut data) = self.data.try_borrow_mut() else {
             return;
         };
         if data.screen_framebuffer == framebuffer {

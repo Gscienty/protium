@@ -1,6 +1,6 @@
 use std::collections::{BTreeMap, btree_map::Iter};
 
-use super::{ProgramID, shader_type};
+use super::{ProgramID, graphics, shader_type};
 
 pub(crate) struct Shader {
     program: ProgramID,
@@ -11,12 +11,12 @@ pub(crate) struct Shader {
 impl Shader {
     pub(super) fn new<'a>(
         program: ProgramID,
-        uniforms: impl Iterator<Item = &'a (&'a str, shader_type::ShaderType)>,
+        uniforms: impl Iterator<Item = &'a (String, shader_type::ShaderType)>,
         texels: bool,
     ) -> Self {
         let mut uniform_types = BTreeMap::new();
         for (name, typ) in uniforms {
-            uniform_types.insert((*name).to_owned(), typ.clone());
+            uniform_types.insert(name.to_owned(), typ.clone());
         }
 
         Self {
@@ -32,5 +32,9 @@ impl Shader {
 
     pub(super) fn get_program(&self) -> ProgramID {
         self.program
+    }
+
+    pub(crate) fn dispose(&self, graphics: &graphics::Graphics) {
+        graphics.get_handler().delete_program(self.program);
     }
 }

@@ -6,6 +6,18 @@ pub(crate) struct DstRegion {
 }
 
 impl DstRegion {
+    pub(crate) fn new(region: utils::Rectangle, count: i32) -> Self {
+        Self { region, count }
+    }
+
+    pub(crate) fn get_region(&self) -> &utils::Rectangle {
+        &self.region
+    }
+
+    pub(crate) fn add_count(&mut self, count: i32) {
+        self.count += count;
+    }
+
     pub(super) fn get_x(&self) -> i32 {
         self.region.min.x
     }

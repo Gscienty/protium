@@ -1,16 +1,17 @@
 use super::{BufferID, ProgramID, VertexArrayID, glhandler};
-use std::{collections, marker, mem, sync};
+use std::{cell, collections};
 
+#[derive(Clone, PartialEq)]
 pub struct GLVertexLayoutPart {
-    name: String,
-    elems_count: usize,
+    elements_count: usize,
+    size: usize,
 }
 
 impl GLVertexLayoutPart {
-    pub fn new(name: &str, elems_count: usize) -> Self {
+    pub fn new(elements_count: usize, size: usize) -> Self {
         Self {
-            name: name.to_owned(),
-            elems_count,
+            elements_count,
+            size,
         }
     }
 }
@@ -23,33 +24,31 @@ pub trait GLVertexEntity {
     fn index(&self) -> u32;
 }
 
-pub(super) struct GLVertexLayout<T>
-where
-    T: GLVertexEntity,
-{
+#[derive(Clone, PartialEq)]
+pub(crate) struct GLVertexLayout {
     parts: Vec<GLVertexLayoutPart>,
-    elems_count_total: usize,
-
-    _entity: marker::PhantomData<T>,
+    size: usize,
 }
 
-impl<T> GLVertexLayout<T>
-where
-    T: GLVertexEntity,
-{
-    pub fn new() -> Self {
-        let parts = T::layout();
-        let elems_count_total = parts.iter().fold(0, |acc, part| acc + part.elems_count);
-
-        Self {
-            parts,
-            elems_count_total,
-
-            _entity: Default::default(),
-        }
+impl GLVertexLayout {
+    pub fn new<T>() -> Self
+    where
+        T: GLVertexEntity,
+    {
+        Self::new_with_parts(T::layout())
     }
 
-    pub fn enable(&self, hdr: &glhandler::GLHandler) {
+    pub fn new_with_parts(parts: Vec<GLVertexLayoutPart>) -> Self {
+        let size = parts.iter().fold(0, |acc, part| acc + part.size);
+
+        Self { parts, size }
+    }
+
+    pub(crate) fn get_size(&self) -> usize {
+        self.size
+    }
+
+    pub(super) fn enable(&self, hdr: &glhandler::GLHandler) {
         for index in 0..self.parts.len() {
             hdr.enable_vertex_attrib_array(index as u32);
         }
@@ -58,17 +57,17 @@ where
         for (index, part) in self.parts.iter().enumerate() {
             hdr.vertex_attrib_pointer(
                 index as u32,
-                part.elems_count as i32,
+                part.elements_count as i32,
                 web_sys::WebGl2RenderingContext::FLOAT,
                 false,
-                (mem::size_of::<f32>() * self.elems_count_total) as i32,
+                self.size as i32,
                 offset as i32,
             );
-            offset += mem::size_of::<f32>() * part.elems_count;
+            offset += part.size;
         }
     }
 
-    pub fn disable(&self, hdr: &glhandler::GLHandler) {
+    pub(super) fn disable(&self, hdr: &glhandler::GLHandler) {
         for index in (0..self.parts.len()).rev() {
             hdr.disable_vertex_attrib_array(index as u32);
         }
@@ -87,24 +86,18 @@ struct ProgramStateData {
     last_program: ProgramID,
     last_uniforms: collections::HashMap<String, Vec<u8>>,
     last_texture_offset: i32,
+
+    layout: Option<GLVertexLayout>,
 }
 
-pub(super) struct ProgramState<T>
-where
-    T: GLVertexEntity,
-{
-    data: sync::RwLock<ProgramStateData>,
-
-    layout: GLVertexLayout<T>,
+pub(super) struct ProgramState {
+    data: cell::RefCell<ProgramStateData>,
 }
 
-impl<T> ProgramState<T>
-where
-    T: GLVertexEntity,
-{
+impl ProgramState {
     pub(super) fn new() -> Self {
         Self {
-            data: sync::RwLock::new(ProgramStateData {
+            data: cell::RefCell::new(ProgramStateData {
                 vertex_array: 0,
 
                 array_buffer: 0,
@@ -116,15 +109,16 @@ where
                 last_program: 0,
                 last_uniforms: collections::HashMap::new(),
                 last_texture_offset: 0,
+
+                layout: None,
             }),
-            layout: GLVertexLayout::<T>::new(),
         }
     }
 
     pub(super) fn reset(&self, hdr: &glhandler::GLHandler) {
         hdr.use_program(0);
 
-        let Ok(mut data) = self.data.write() else {
+        let Ok(mut data) = self.data.try_borrow_mut() else {
             return;
         };
 
@@ -141,7 +135,7 @@ where
     }
 
     pub(super) fn swap_program(&self, program: ProgramID) -> bool {
-        let Ok(mut data) = self.data.write() else {
+        let Ok(mut data) = self.data.try_borrow_mut() else {
             return false;
         };
 
@@ -156,7 +150,7 @@ where
     }
 
     pub(super) fn swap_texture_offset(&self, offset: i32) -> bool {
-        let Ok(mut data) = self.data.write() else {
+        let Ok(mut data) = self.data.try_borrow_mut() else {
             return false;
         };
 
@@ -170,7 +164,7 @@ where
     }
 
     pub(super) fn last_uniform_eq(&self, name: &str, value: &[u8]) -> bool {
-        let Ok(data) = self.data.read() else {
+        let Ok(data) = self.data.try_borrow() else {
             return false;
         };
         let Some(cached) = data.last_uniforms.get(name) else {
@@ -181,41 +175,28 @@ where
     }
 
     pub(super) fn add_last_uniform(&self, name: &str, value: &[u8]) {
-        let Ok(mut data) = self.data.write() else {
+        let Ok(mut data) = self.data.try_borrow_mut() else {
             return;
         };
         data.last_uniforms.insert(name.to_owned(), value.to_owned());
     }
 
     pub(super) fn reset_last_uniforms(&self) {
-        let Ok(mut data) = self.data.write() else {
+        let Ok(mut data) = self.data.try_borrow_mut() else {
             return;
         };
 
         data.last_uniforms.clear();
     }
 
-    pub(super) fn set_vertices(&self, hdr: &glhandler::GLHandler, entities: &[T]) {
-        let entity_vertex_bytes_size = self.layout.elems_count_total * mem::size_of::<f32>();
-        let vertices_size = entity_vertex_bytes_size * entities.len();
-        let elements_size = mem::size_of::<u32>() * entities.len();
-
-        // 将 entities 序列化
-        let mut buffer = vec![0u8; vertices_size];
-        let mut element_buffer = vec![0u8; elements_size];
-
-        let mut vertex_offset = 0;
-        let mut element_offset = 0;
-        for vertex in entities.iter() {
-            element_buffer[element_offset..element_offset + mem::size_of::<u32>()]
-                .copy_from_slice(&vertex.index().to_ne_bytes());
-            vertex.vertex_array(&mut buffer[vertex_offset..]);
-
-            element_offset += mem::size_of::<u32>();
-            vertex_offset += entity_vertex_bytes_size;
-        }
-
-        let Ok(mut data) = self.data.write() else {
+    pub(super) fn set_vertices(
+        &self,
+        hdr: &glhandler::GLHandler,
+        layout: &GLVertexLayout,
+        vertices: &[u8],
+        indexes: &[u8],
+    ) {
+        let Ok(mut data) = self.data.try_borrow_mut() else {
             return;
         };
 
@@ -228,12 +209,11 @@ where
         }
         hdr.bind_vertex_array(data.vertex_array);
 
-        if data.array_buffer_bytes_size < vertices_size {
+        if data.array_buffer_bytes_size < vertices.len() {
             if data.array_buffer != 0 {
                 hdr.delete_buffer(data.array_buffer);
             }
-
-            let vertices_size = Self::pow2(vertices_size);
+            let vertices_size = Self::pow2(vertices.len());
 
             let Some(array_buffer) = hdr.create_buffer() else {
                 return;
@@ -246,17 +226,25 @@ where
             );
             data.array_buffer = array_buffer;
             data.array_buffer_bytes_size = vertices_size;
+        }
+        if let Some(original_layout) = data.layout.as_ref() {
+            if original_layout.ne(layout) {
+                original_layout.disable(hdr);
 
-            self.layout.enable(hdr);
+                layout.enable(hdr);
+                data.layout.replace(layout.clone());
+            }
+        } else {
+            layout.enable(hdr);
+            data.layout.replace(layout.clone());
         }
 
         // 适配 element array
-        if data.element_array_buffer_bytes_size < elements_size {
+        if data.element_array_buffer_bytes_size < indexes.len() {
             if data.element_array_buffer != 0 {
                 hdr.delete_buffer(data.element_array_buffer);
             }
-
-            let indexes_size = Self::pow2(elements_size);
+            let indexes_size = Self::pow2(indexes.len());
 
             let Some(element_array_buffer) = hdr.create_buffer() else {
                 return;
@@ -274,15 +262,11 @@ where
             data.element_array_buffer_bytes_size = indexes_size;
         }
 
-        hdr.buffer_sub_data(
-            web_sys::WebGl2RenderingContext::ARRAY_BUFFER,
-            0,
-            buffer.as_ref(),
-        );
+        hdr.buffer_sub_data(web_sys::WebGl2RenderingContext::ARRAY_BUFFER, 0, vertices);
         hdr.buffer_sub_data(
             web_sys::WebGl2RenderingContext::ELEMENT_ARRAY_BUFFER,
             0,
-            element_buffer.as_ref(),
+            indexes,
         );
     }
 

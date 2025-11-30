@@ -30,11 +30,11 @@ impl Image {
     }
 
     #[inline(always)]
-    pub(super) const fn get_texture(&self) -> TextureID {
+    pub(crate) const fn get_texture(&self) -> TextureID {
         self.texture
     }
 
-    pub(crate) fn dispose(&self, graphics: &impl graphics::GraphicsGLHandlerGetter) {
+    pub(crate) fn dispose(&self, graphics: &graphics::Graphics) {
         if let Some(framebuffer) = self.framebuffer.get() {
             graphics.get_handler().delete_framebuffer(framebuffer);
         }
@@ -59,7 +59,7 @@ impl Image {
 
     pub(crate) fn read_pixels<'a>(
         &self,
-        graphics: &(impl graphics::GraphicsGLHandlerGetter + graphics::GraphicsContextGetter),
+        graphics: &graphics::Graphics,
         args: impl Iterator<Item = &'a utils::Rectangle>,
     ) -> Result<Vec<Vec<u8>>, ()> {
         let framebuffer = self.ensure_framebuffer(graphics)?;
@@ -79,12 +79,8 @@ impl Image {
 
     pub(crate) fn write_pixels(
         &self,
+        graphics: &graphics::Graphics,
         args: impl Iterator<Item = pixels_args::PixelsArgs>,
-        graphics: &(
-             impl graphics::GraphicsGLHandlerGetter
-             + graphics::GraphicsContextGetter
-             + graphics::GraphicsDrawCalledSwap
-         ),
     ) -> Result<(), ()> {
         if self.is_screen {
             return Err(());
@@ -121,10 +117,7 @@ impl Image {
         Ok(())
     }
 
-    pub(super) fn set_viewport(
-        &self,
-        graphics: &(impl graphics::GraphicsGLHandlerGetter + graphics::GraphicsContextGetter),
-    ) -> Result<(), ()> {
+    pub(super) fn set_viewport(&self, graphics: &graphics::Graphics) -> Result<(), ()> {
         let framebuffer = self.ensure_framebuffer(graphics)?;
         let (width, height) = self.viewport_size();
         graphics
@@ -134,16 +127,13 @@ impl Image {
         Ok(())
     }
 
-    fn ensure_framebuffer(
-        &self,
-        graphics: &(impl graphics::GraphicsGLHandlerGetter + graphics::GraphicsContextGetter),
-    ) -> Result<FramebufferID, ()> {
+    fn ensure_framebuffer(&self, graphics: &graphics::Graphics) -> Result<FramebufferID, ()> {
         if let Some(framebuffer) = self.framebuffer.get() {
             return Ok(framebuffer);
         }
 
         if self.is_screen {
-            let framebuffer = graphics.get_context().get_screen_framebuffer();
+            let framebuffer = graphics.get_context().new_screen_framebuffer();
             self.framebuffer.replace(Some(framebuffer));
 
             return Ok(framebuffer);
@@ -157,10 +147,7 @@ impl Image {
         Ok(framebuffer)
     }
 
-    pub(super) fn ensure_stencil_buffer(
-        &self,
-        graphics: &(impl graphics::GraphicsGLHandlerGetter + graphics::GraphicsContextGetter),
-    ) -> Result<(), ()> {
+    pub(super) fn ensure_stencil_buffer(&self, graphics: &graphics::Graphics) -> Result<(), ()> {
         if self.stencil.get().is_some() {
             return Ok(());
         }
@@ -183,7 +170,7 @@ impl Image {
         Ok(())
     }
 
-    pub(super) const fn internal_image_size(x: i32) -> i32 {
+    pub(crate) const fn internal_image_size(x: i32) -> i32 {
         if x < 16 {
             16
         } else {

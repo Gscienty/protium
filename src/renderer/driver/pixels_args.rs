@@ -6,6 +6,10 @@ pub(crate) struct PixelsArgs {
 }
 
 impl PixelsArgs {
+    pub(crate) fn new(region: utils::Rectangle, pixels: Vec<u8>) -> Self {
+        Self { pixels, region }
+    }
+
     pub(super) const fn get_x(&self) -> i32 {
         self.region.min.x
     }
