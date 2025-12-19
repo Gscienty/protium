@@ -1,0 +1,17 @@
+<!doctype html>
+<html lang="en-US">
+  <head>
+    <meta charset="utf-8" />
+    <title>hello-wasm example</title>
+  </head>
+  <body>
+    <canvas id="cvs" width="800" height="600"></canvas>
+    <script type="module">
+      import init, { run } from "./pkg/protium.js";
+      init().then(async () => {
+        var cvs = document.getElementById("cvs");
+        await run(cvs);
+      });
+    </script>
+  </body>
+</html>

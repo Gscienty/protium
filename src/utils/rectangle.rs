@@ -1,4 +1,4 @@
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Default, Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct Point {
     pub(crate) x: i32,
     pub(crate) y: i32,
@@ -14,7 +14,7 @@ impl Point {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Default, Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Rectangle {
     pub(crate) min: Point,
     pub(crate) max: Point,

@@ -43,7 +43,7 @@ impl Image {
         }
     }
 
-    pub(super) fn get_id(&self) -> ImageID {
+    pub(crate) fn get_id(&self) -> ImageID {
         self.id
     }
 

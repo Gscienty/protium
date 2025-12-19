@@ -25,7 +25,7 @@ pub trait GLVertexEntity {
 }
 
 #[derive(Clone, PartialEq)]
-pub(crate) struct GLVertexLayout {
+pub struct GLVertexLayout {
     parts: Vec<GLVertexLayoutPart>,
     size: usize,
 }

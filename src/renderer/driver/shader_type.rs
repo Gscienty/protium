@@ -1,13 +1,13 @@
 #[derive(Default, Debug, Clone)]
-pub(crate) struct ShaderType {
-    pub(crate) main: ShaderBasicType,
-    pub(crate) sub: Vec<ShaderType>,
-    pub(crate) length: usize,
+pub struct ShaderType {
+    pub main: ShaderBasicType,
+    pub sub: Vec<ShaderType>,
+    pub length: usize,
 }
 
 #[allow(dead_code)]
 #[derive(Default, Debug, Clone, Copy)]
-pub(crate) enum ShaderBasicType {
+pub enum ShaderBasicType {
     #[default]
     None,
     Float,

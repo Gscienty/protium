@@ -13,6 +13,14 @@ mod shader;
 pub type ImageID = usize;
 pub type ShaderID = usize;
 
+pub(crate) use drawing::Drawing;
+pub use driver::{
+    BLEND_CLEAR, BLEND_COPY, BLEND_DEFAULT, BLEND_SOURCE_OVER, Blend, ColorSpace, FillRule,
+    GLVertexEntity, GLVertexLayout, GLVertexLayoutPart, ShaderBasicType, ShaderType,
+};
+pub(crate) use image::Image;
+pub(crate) use shader::Shader;
+
 pub(crate) struct Renderer {
     next_image_id: sync::atomic::AtomicUsize,
     next_shader_id: sync::atomic::AtomicUsize,

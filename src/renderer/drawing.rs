@@ -60,7 +60,7 @@ impl Drawing {
         self
     }
 
-    pub(crate) fn append_source(&self, name: &str, image: &image::Image) -> &Self {
+    pub(crate) fn set_source(&self, name: &str, image: &image::Image) -> &Self {
         let mut data = self.data.borrow_mut();
         data.sources.push(command::DrawTriangleSourceArg::new(
             name.to_owned(),
@@ -91,7 +91,7 @@ impl Drawing {
         self
     }
 
-    pub(crate) fn draw(self) {
+    pub(crate) fn draw(&self) {
         let data = self.data.replace(DrawingData {
             destination: 0,
             sources: Default::default(),

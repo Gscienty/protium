@@ -15,4 +15,8 @@ impl Shader {
     pub(super) const fn get_id(&self) -> ShaderID {
         self.id
     }
+
+    pub(crate) fn dispose(&self) {
+        let _ = self.sender.send(command::Command::DisposeShader(self.id));
+    }
 }

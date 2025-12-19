@@ -1,6 +1,6 @@
 use std::{collections, convert};
 
-use tokio::sync::mpsc;
+use tokio_with_wasm::alias::sync::mpsc;
 
 use super::{ImageID, ShaderID, command, command_pool, driver};
 
@@ -27,7 +27,7 @@ impl CommandProcssor {
         graphics.initialize();
         let max_texture_size = graphics.get_max_texture_size();
 
-        tokio::spawn(async move {
+        tokio_with_wasm::alias::spawn(async move {
             Self::new(graphics, receiver, max_vertex_count_limit)
                 .run()
                 .await;

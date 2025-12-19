@@ -1,5 +1,5 @@
 #[derive(Default, Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum FillRule {
+pub enum FillRule {
     #[default]
     FillAll,
     NonZero,

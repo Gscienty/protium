@@ -102,7 +102,6 @@ impl GLHandler {
     }
 
     pub(super) fn create_buffer(&self) -> Option<BufferID> {
-        crate::log("create_buffer");
         self.glctx
             .create_buffer()
             .map(|value| self.buffers.create(value))
@@ -127,14 +126,12 @@ impl GLHandler {
     }
 
     pub(super) fn create_shader(&self, type_: u32) -> Option<ShaderID> {
-        crate::log(&format!("create shader {type_}"));
         self.glctx
             .create_shader(type_)
             .map(|value| self.shaders.create(value))
     }
 
     pub(super) fn create_vertex_array(&self) -> Option<VertexArrayID> {
-        crate::log("create_vertex_array");
         self.glctx
             .create_vertex_array()
             .map(|value| self.vertex_arrays.create(value))
@@ -145,7 +142,6 @@ impl GLHandler {
     }
 
     pub(super) fn attach_shader(&self, program: ProgramID, shader: ShaderID) {
-        crate::log(&format!("attach_shader {program} {shader}"));
         self.programs.process_entity(program, |program| {
             self.shaders.process_entity(shader, |shader| {
                 self.glctx.attach_shader(program, shader);
@@ -160,7 +156,6 @@ impl GLHandler {
     }
 
     pub(super) fn bind_buffer(&self, target: u32, buffer: BufferID) {
-        crate::log(&format!("bind_buffer {target} {buffer}"));
         if !self.buffers.process_entity(buffer, |buffer| {
             self.glctx.bind_buffer(target, Some(buffer));
         }) {
@@ -199,7 +194,6 @@ impl GLHandler {
     }
 
     pub(super) fn bind_vertex_array(&self, vertex_array: VertexArrayID) {
-        crate::log(&format!("bind_vertex_array {vertex_array}"));
         if !self
             .vertex_arrays
             .process_entity(vertex_array, |vertex_array| {
@@ -226,12 +220,10 @@ impl GLHandler {
     }
 
     pub(super) fn buffer_init(&self, target: u32, size: i32, usage: u32) {
-        crate::log(&format!("buffer_init {target} {size} {usage}"));
         self.glctx.buffer_data_with_i32(target, size, usage);
     }
 
     pub(super) fn buffer_sub_data(&self, target: u32, offset: i32, src_data: &[u8]) {
-        crate::log(&format!("buffer_sub_data {target} {offset} {src_data:?}"));
         self.glctx
             .buffer_sub_data_with_i32_and_u8_array(target, offset, src_data);
     }
@@ -253,14 +245,12 @@ impl GLHandler {
     }
 
     pub(super) fn compile_shader(&self, shader: ShaderID) {
-        crate::log(&format!("compile_shader {shader}"));
         self.shaders.process_entity(shader, |shader| {
             self.glctx.compile_shader(shader);
         });
     }
 
     pub(super) fn delete_buffer(&self, buffer: BufferID) {
-        crate::log(&format!("delete_buffer {buffer}"));
         let Some(buffer) = self.buffers.remove(buffer) else {
             return;
         };
@@ -289,7 +279,6 @@ impl GLHandler {
     }
 
     pub(super) fn delete_shader(&self, shader: ShaderID) {
-        crate::log(&format!("delete_shader {shader}"));
         let Some(shader) = self.shaders.remove(shader) else {
             return;
         };
@@ -315,7 +304,6 @@ impl GLHandler {
     }
 
     pub(super) fn disable_vertex_attrib_array(&self, index: u32) {
-        crate::log(&format!("disable_vertex_attrib_array {index}"));
         self.glctx.disable_vertex_attrib_array(index);
     }
 
@@ -329,7 +317,6 @@ impl GLHandler {
     }
 
     pub(super) fn enable_vertex_attrib_array(&self, index: u32) {
-        crate::log(&format!("enable_vertex_attrib_array {index}"));
         self.glctx.enable_vertex_attrib_array(index);
     }
 
@@ -440,7 +427,6 @@ impl GLHandler {
     }
 
     pub(super) fn link_program(&self, program: ProgramID) {
-        crate::log(&format!("link_program {program}"));
         self.programs.process_entity(program, |program| {
             self.glctx.link_program(program);
         });
@@ -486,7 +472,6 @@ impl GLHandler {
     }
 
     pub(super) fn shader_source(&self, shader: ShaderID, source: &str) {
-        crate::log(&format!("shader_source {shader} {source}"));
         self.shaders.process_entity(shader, |shader| {
             self.glctx.shader_source(shader, source);
         });
@@ -715,9 +700,6 @@ impl GLHandler {
         stride: i32,
         offset: i32,
     ) {
-        crate::log(&format!(
-            "vertex_attrib_pointer {index} {size} {type_} {normalized} {stride} {offset}"
-        ));
         self.glctx
             .vertex_attrib_pointer_with_i32(index, size, type_, normalized, stride, offset);
     }
@@ -727,7 +709,6 @@ impl GLHandler {
     }
 
     pub(super) fn get_program_parameter(&self, program: ProgramID, pname: u32) -> bool {
-        crate::log(&format!("get_program_parameter {program} {pname}"));
         let mut result = false;
         if !self.programs.process_entity(program, |program| {
             result = self
