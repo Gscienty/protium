@@ -187,7 +187,10 @@ impl Image {
             });
         }
 
-        self.isolate(source.as_ref().map(|source| source.image));
+        material::process_material_data(|data, material| {
+            self.isolate(data, material, source.as_ref().map(|source| source.image));
+            Option::<()>::None
+        });
 
         let atlas_region =
             Self::atlas_region_width_padding(self.width, self.height, self.image_type, &self.node);
@@ -218,17 +221,23 @@ impl Image {
                 return Option::<()>::None;
             }
 
-            self.execute_write_pixels(pixels, region);
+            self.execute_write_pixels(data, material, pixels, region);
             Option::<()>::None
         });
     }
 
-    fn execute_write_pixels(&mut self, pixels: Vec<u8>, mut region: utils::Rectangle) {
+    fn execute_write_pixels(
+        &mut self,
+        material_data: &mut material::MaterialData,
+        material: &material::Material,
+        pixels: Vec<u8>,
+        mut region: utils::Rectangle,
+    ) {
         if self.get_atlas_id().is_none() {
             if pixels.is_empty() {
                 return;
             }
-            self.allocate(None, true);
+            self.allocate(material_data, material, None, true);
         }
 
         let atlas_region = self.get_atlas_region();
@@ -263,10 +272,15 @@ impl Image {
         });
     }
 
-    fn isolate(&mut self, source: Option<&Self>) {
-        let (existed, new_image) = self.isolate_from_source_atlas(source);
+    fn isolate(
+        &mut self,
+        material_data: &mut material::MaterialData,
+        material: &material::Material,
+        source: Option<&Self>,
+    ) {
+        let (existed, new_image) = self.isolate_from_source_atlas(material_data, material, source);
         if !existed {
-            self.allocate(None, false);
+            self.allocate(material_data, material, None, false);
             return;
         }
         if let Some(new_image) = new_image {
@@ -323,7 +337,12 @@ impl Image {
         destination.backend = self.backend;
     }
 
-    fn isolate_from_source_atlas(&self, source: Option<&Self>) -> (bool, Option<Self>) {
+    fn isolate_from_source_atlas(
+        &self,
+        material_data: &mut material::MaterialData,
+        material: &material::Material,
+        source: Option<&Self>,
+    ) -> (bool, Option<Self>) {
         let Some(atlas_id) = self.get_atlas_id() else {
             return (false, None);
         };
@@ -340,7 +359,7 @@ impl Image {
         let mut new_image = Self::new(self.width, self.height, self.image_type);
         let region =
             Self::atlas_region_width_padding(self.width, self.height, self.image_type, &self.node);
-        new_image.allocate(Some(atlas_id), false);
+        new_image.allocate(material_data, material, Some(atlas_id), false);
 
         let destination_region = utils::Rectangle::new(0, 0, self.width, self.height);
         let source_region = utils::Rectangle::new(0, 0, self.width, self.height);
@@ -398,19 +417,28 @@ impl Image {
         Self::atlas_region_width_padding(self.width, self.height, self.image_type, &self.node)
     }
 
-    fn allocate(&mut self, forbidden_atlas_id: Option<renderer::ImageID>, as_source: bool) {
+    fn allocate(
+        &mut self,
+        material_data: &mut material::MaterialData,
+        material: &material::Material,
+        forbidden_atlas_id: Option<renderer::ImageID>,
+        as_source: bool,
+    ) {
         if matches!(self.image_type, ImageType::Screen) {
-            self.backend = backend::Backend::new(self.width, self.height, false, true);
+            self.backend = backend::Backend::new(
+                material_data,
+                material,
+                self.width,
+                self.height,
+                false,
+                true,
+            );
             return;
         }
 
         let padding_size = Self::padding_size(self.image_type);
         let (width, height) = (self.width + padding_size, self.height + padding_size);
-
-        let Some(max_size) = material::process_material(|material| Some(material.get_max_size()))
-        else {
-            return;
-        };
+        let max_size = material.get_max_size();
 
         // volatile
         if !self.can_put_atlas(max_size) {
@@ -418,6 +446,8 @@ impl Image {
                 return;
             }
             self.backend = backend::Backend::new(
+                material_data,
+                material,
                 self.width,
                 self.height,
                 as_source && matches!(self.image_type, ImageType::Regular),
@@ -428,54 +458,49 @@ impl Image {
 
         // regular, a part of material
         let self_image_id = self.process_backend(|backend| backend.get_atlas_id());
-        let finded_material = material::process_material(|material| {
-            let mut finded = false;
-            material.for_each_atlas(|material_data, backend| {
-                let Some(node) = backend.alloc_node(material.get_renderer(), width, height, |backend| {
-                    if backend.get_source() != as_source {
-                        return false;
-                    }
-                    let atlas_id = backend.get_image().get_id();
-                    if material_data.is_in_frame(atlas_id) {
-                        return false;
-                    }
-                    if matches!(forbidden_atlas_id, Some(forbidden_atlas_id) if forbidden_atlas_id == atlas_id) {
-                        return false;
-                    }
 
-                    true
-                }) else {
-                    return true; // continue for_each atlas
-                };
+        let mut finded = false;
+        material_data.for_each_atlas(|backend| {
+            let Some(node) = backend.alloc_node(material.get_renderer(), width, height, |backend| {
+                if backend.get_source() != as_source {
+                    return false;
+                }
+                let atlas_id = backend.get_image().get_id();
+                if material_data.is_in_frame(atlas_id) {
+                    return false;
+                }
+                if matches!(forbidden_atlas_id, Some(forbidden_atlas_id) if forbidden_atlas_id == atlas_id) {
+                    return false;
+                }
 
-                self.backend.replace(backend.clone());
-                self.node.replace(node);
-                finded = true;
-                false // break for_each atlas
-            });
-            Some(finded)
+                true
+            }) else {
+                return true; // continue for_each atlas
+            };
+
+            self.backend.replace(backend.clone());
+            self.node.replace(node);
+            finded = true;
+            false // break for_each atlas
         });
-        if matches!(finded_material, Some(true)) {
+        if finded {
             return;
         }
 
         // init page size
-        let Some((mut w, mut h)) = material::process_material(|material| {
-            let size = if as_source {
-                material.get_min_source_size()
-            } else {
-                material.get_min_destination_size()
-            };
-            Some((size, size))
-        }) else {
-            return;
+        let page_size = if as_source {
+            material.get_min_source_size()
+        } else {
+            material.get_min_destination_size()
         };
+        let mut w = page_size;
         while width > w {
             w *= 2;
             if w > max_size {
                 return;
             }
         }
+        let mut h = page_size;
         while height > h {
             h *= 2;
             if h > max_size {
@@ -483,15 +508,12 @@ impl Image {
             }
         }
         // regular, a part of material, but create new material
-        material::process_material(|material| {
-            let mut page = packing::Page::new(w, h, max_size);
-            let node = page.alloc(width, height)?;
+        let mut page = packing::Page::new(w, h, max_size);
+        let node = page.alloc(width, height);
 
-            self.backend = backend::Backend::new(width, height, as_source, false);
-            self.node.replace(node);
-
-            Option::<()>::None
-        });
+        self.backend =
+            backend::Backend::new(material_data, material, width, height, as_source, false);
+        self.node = node;
     }
 
     fn atlas_region_width_padding(

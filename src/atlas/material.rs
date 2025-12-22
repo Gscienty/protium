@@ -188,4 +188,19 @@ impl MaterialData {
     pub(super) fn append_delay(&mut self, delay: delay::DelayCommand) {
         self.delay.push_back(delay);
     }
+
+    pub(super) fn for_each_atlas<F>(&self, mut cb: F)
+    where
+        F: FnMut(&backend::Backend) -> bool,
+    {
+        for atlas in self.atlas_set.values() {
+            if !cb(atlas) {
+                break;
+            }
+        }
+    }
+
+    pub(super) fn add_atlas(&mut self, id: renderer::ImageID, backend: backend::Backend) {
+        self.atlas_set.insert(id, backend);
+    }
 }

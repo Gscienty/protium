@@ -15,25 +15,30 @@ pub(super) struct BackendData {
 pub(super) struct Backend(sync::Arc<sync::Mutex<BackendData>>);
 
 impl Backend {
-    pub(super) fn new(width: i32, height: i32, source: bool, screen: bool) -> Option<Self> {
-        material::process_material(|material| {
-            let image = material.get_renderer().create_image(width, height, screen);
-            let id = image.get_id();
-            let backend = Self(sync::Arc::new(sync::Mutex::new(BackendData {
-                page: packing::Page::new(
-                    width,
-                    height,
-                    material.get_renderer().get_max_texture_size(),
-                ),
-                image,
-                source,
-                screen,
-            })));
+    pub(super) fn new(
+        material_data: &mut material::MaterialData,
+        material: &material::Material,
+        width: i32,
+        height: i32,
+        source: bool,
+        screen: bool,
+    ) -> Option<Self> {
+        let image = material.get_renderer().create_image(width, height, screen);
+        let id = image.get_id();
+        let backend = Self(sync::Arc::new(sync::Mutex::new(BackendData {
+            page: packing::Page::new(
+                width,
+                height,
+                material.get_renderer().get_max_texture_size(),
+            ),
+            image,
+            source,
+            screen,
+        })));
 
-            material.add_atlas(id, backend.clone());
+        material_data.add_atlas(id, backend.clone());
 
-            Some(backend)
-        })
+        Some(backend)
     }
 
     pub(super) fn write_pixels(&self, pixels: Vec<u8>, region: utils::Rectangle) {

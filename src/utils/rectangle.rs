@@ -134,22 +134,3 @@ impl Rectangle {
         self
     }
 }
-
-#[derive(Default, Clone, Copy)]
-pub(crate) struct F32Rectangle {
-    pub(crate) x: f32,
-    pub(crate) y: f32,
-    pub(crate) width: f32,
-    pub(crate) height: f32,
-}
-
-impl From<&Rectangle> for F32Rectangle {
-    fn from(value: &Rectangle) -> Self {
-        Self {
-            x: value.min.x as f32,
-            y: value.min.y as f32,
-            width: value.get_width() as f32,
-            height: value.get_height() as f32,
-        }
-    }
-}

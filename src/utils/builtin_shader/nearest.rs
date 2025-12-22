@@ -18,17 +18,17 @@ void main() {
 
 const NEAREST_FILTER_FRAGMENT_SHADER_SOURCE: &str = r##"#version 300 es
 precision mediump float;
-in vec2 source_pos;
-in vec4 color;
+in vec2 frag_source_pos;
+in vec4 frag_color;
 uniform vec2 source_size;
 uniform vec2 source_region_pos;
 uniform vec2 source_region_size;
 uniform sampler2D source;
 out vec4 out_color;
 void main() {
-    vec4 pos_color = texture(source, source_pos / source_size);
-    vec2 pos = source_pos / source_size - source_region_pos;
-    out_color = pos_color * color;
+    vec4 pos_color = texture(source, frag_source_pos / source_size);
+    vec2 pos = frag_source_pos / source_size - source_region_pos;
+    out_color = pos_color * frag_color;
 }"##;
 
 fn create_shader(renderer: &renderer::Renderer) -> renderer::Shader {

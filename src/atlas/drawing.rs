@@ -2,7 +2,7 @@ use std::cell;
 
 use crate::{renderer, utils};
 
-use super::{backend, image, material, packing};
+use super::{backend, delay, image, material, packing};
 
 pub trait DrawingVariable: Sized + Default {
     fn set_source_region(
@@ -36,7 +36,7 @@ impl<T> Drawing<T>
 where
     T: DrawingVariable,
 {
-    pub(crate) fn new(
+    pub(super) fn new(
         backend: &backend::Backend,
         region: utils::Rectangle,
         shader: &renderer::Shader,
@@ -103,11 +103,23 @@ where
         self
     }
 
-    pub(crate) fn draw(self) {}
+    pub(crate) fn draw(self) {
+        self.prepare_draw();
+
+        material::process_material_data(|data, material| {
+            if !data.in_frame() {
+                data.append_delay(delay::DelayCommand::Draw(self.renderer_drawing));
+                return Option::<()>::None;
+            }
+
+            self.renderer_drawing.draw();
+            Option::<()>::None
+        });
+    }
 
     pub(crate) fn directly_draw(self) {
         self.prepare_draw();
-        self.draw();
+        self.renderer_drawing.draw();
     }
 
     fn prepare_draw(&self) {
