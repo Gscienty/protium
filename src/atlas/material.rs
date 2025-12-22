@@ -33,6 +33,30 @@ pub(crate) fn init_material(
     MATERIAL.get_or_init(|| Material::new(renderer));
 }
 
+pub(crate) fn begin_frame() {
+    process_material(|material| {
+        material.begin_frame();
+
+        Option::<()>::None
+    });
+}
+
+pub(crate) fn end_frame() {
+    process_material(|material| {
+        material.end_frame();
+
+        Option::<()>::None
+    });
+}
+
+pub(crate) fn flush(endframe: bool) {
+    process_material(|material| {
+        material.flush(endframe);
+
+        Option::<()>::None
+    });
+}
+
 pub(super) fn process_material<F, T>(cb: F) -> Option<T>
 where
     F: FnOnce(&Material) -> Option<T>,
@@ -40,6 +64,19 @@ where
     let material = MATERIAL.get()?;
 
     cb(material)
+}
+
+pub(super) fn process_material_data<F, T>(cb: F) -> Option<T>
+where
+    F: FnOnce(&mut MaterialData, &Material) -> Option<T>,
+{
+    let material = MATERIAL.get()?;
+
+    let Ok(mut data) = material.data.lock() else {
+        return None;
+    };
+
+    cb(&mut data, material)
 }
 
 impl Material {
@@ -82,6 +119,14 @@ impl Material {
         };
 
         data.atlas_set.insert(id, backend);
+    }
+
+    pub(super) fn del_atlas(&self, id: renderer::ImageID) {
+        let Ok(mut data) = self.data.lock() else {
+            return;
+        };
+
+        data.atlas_set.remove(&id);
     }
 
     pub(super) fn for_each_atlas<F>(&self, mut cb: F)
@@ -134,5 +179,13 @@ impl Material {
 impl MaterialData {
     pub(super) fn is_in_frame(&self, id: renderer::ImageID) -> bool {
         self.inframe_source.contains(&id)
+    }
+
+    pub(super) fn in_frame(&self) -> bool {
+        self.inframe
+    }
+
+    pub(super) fn append_delay(&mut self, delay: delay::DelayCommand) {
+        self.delay.push_back(delay);
     }
 }

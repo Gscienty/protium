@@ -1,8 +1,8 @@
-use std::sync;
+use std::{ptr, sync};
 
 use crate::{renderer, utils};
 
-use super::{backend, drawing, material, packing};
+use super::{backend, delay, drawing, material, packing};
 
 #[derive(Clone, Copy)]
 pub(crate) enum ImageType {
@@ -11,16 +11,7 @@ pub(crate) enum ImageType {
     Volatile,
 }
 
-// TODO: use it
-struct ImageData {
-    backend: Option<backend::Backend>,
-    node: packing::Tree<packing::PackingData>,
-
-    width: i32,
-    height: i32,
-    image_type: ImageType,
-}
-
+#[derive(Clone)]
 pub(crate) struct Image {
     backend: Option<backend::Backend>,
     node: packing::Tree<packing::PackingData>,
@@ -37,7 +28,7 @@ pub(crate) struct AtlasDrawingVertexEntity {
 }
 
 impl AtlasDrawingVertexEntity {
-    fn new(
+    pub(crate) fn new(
         destination_point: utils::Point,
         source_point: utils::Point,
         color: (f32, f32, f32, f32),
@@ -79,13 +70,13 @@ pub(crate) struct AtlasDrawingVariable {
 }
 
 impl AtlasDrawingVariable {
-    fn extend_vertex(&mut self, vertex: Vec<AtlasDrawingVertexEntity>) -> &mut Self {
+    pub(crate) fn extend_vertex(&mut self, vertex: Vec<AtlasDrawingVertexEntity>) -> &mut Self {
         self.vertex_list.extend(vertex);
 
         self
     }
 
-    fn extend_index(&mut self, indexes: Vec<u32>) -> &mut Self {
+    pub(crate) fn extend_index(&mut self, indexes: Vec<u32>) -> &mut Self {
         self.indexes.extend(indexes);
 
         self
@@ -151,6 +142,15 @@ pub(crate) struct AtlasDrawingSource<'a> {
     region: utils::Rectangle,
 }
 
+impl<'a> AtlasDrawingSource<'a> {
+    pub(crate) fn new(
+        image: &'a Image,
+        region: utils::Rectangle,
+    ) -> Option<AtlasDrawingSource<'a>> {
+        Some(Self { image, region })
+    }
+}
+
 impl Image {
     pub(crate) fn new(width: i32, height: i32, image_type: ImageType) -> Self {
         Self {
@@ -172,10 +172,9 @@ impl Image {
         cb(backend)
     }
 
-    pub(crate) fn drawing_atlas_builtin_nearest(
+    pub(crate) fn draw(
         &mut self,
         region: utils::Rectangle,
-        shader: &renderer::Shader,
         source: Option<AtlasDrawingSource<'_>>,
     ) -> Option<drawing::Drawing<AtlasDrawingVariable>> {
         if let Some(atlas_id) = source
@@ -195,19 +194,79 @@ impl Image {
         let region = region.add(atlas_region.min);
         let backend = self.backend.as_ref()?;
 
-        let drawing = drawing::Drawing::new(backend, region, shader);
+        let drawing = material::process_material(|material| {
+            drawing::Drawing::new(
+                backend,
+                region,
+                utils::builtin_shader::get_nearest_shader(material.get_renderer()),
+            )
+        })?;
         if let Some(source) = source.as_ref() {
-            if let Some(drawing) = drawing.as_ref() {
-                drawing.set_source("source", source.image, source.region);
+            drawing.set_source("source", source.image, source.region);
+        }
+        Some(drawing)
+    }
+
+    pub(crate) fn write_pixels(&mut self, pixels: Vec<u8>, region: utils::Rectangle) {
+        material::process_material_data(|data, material| {
+            if !data.in_frame() {
+                data.append_delay(delay::DelayCommand::WritePixels((
+                    self.clone(),
+                    pixels,
+                    region,
+                )));
+                return Option::<()>::None;
+            }
+
+            self.execute_write_pixels(pixels, region);
+            Option::<()>::None
+        });
+    }
+
+    fn execute_write_pixels(&mut self, pixels: Vec<u8>, mut region: utils::Rectangle) {
+        if self.get_atlas_id().is_none() {
+            if pixels.is_empty() {
+                return;
+            }
+            self.allocate(None, true);
+        }
+
+        let atlas_region = self.get_atlas_region();
+        if region.ne(&utils::Rectangle::new(0, 0, self.width, self.height))
+            || Self::padding_size(self.image_type) == 0
+        {
+            region = region.add(atlas_region.min);
+            self.process_backend(|backend| {
+                backend.write_pixels(pixels, region);
+                Option::<()>::None
+            });
+            return;
+        }
+
+        let mut atlas_pixels = vec![0u8; (self.width + self.height * 4) as usize];
+        let width = region.get_width();
+        let atlas_width = atlas_region.get_width();
+        for i in 0..region.get_height() {
+            unsafe {
+                ptr::copy_nonoverlapping(
+                    pixels.as_ptr().add((4 * width * i) as usize),
+                    atlas_pixels
+                        .as_mut_ptr()
+                        .add((4 * atlas_width * i) as usize),
+                    (4 * width) as usize,
+                );
             }
         }
-        drawing
+        self.process_backend(|backend| {
+            backend.write_pixels(atlas_pixels, atlas_region);
+            Option::<()>::None
+        });
     }
 
     fn isolate(&mut self, source: Option<&Self>) {
         let (existed, new_image) = self.isolate_from_source_atlas(source);
         if !existed {
-            self.alloc(None, false);
+            self.allocate(None, false);
             return;
         }
         if let Some(new_image) = new_image {
@@ -215,8 +274,47 @@ impl Image {
         }
     }
 
+    pub(crate) fn deallocate(&mut self) {
+        material::process_material_data(|data, material| {
+            if !data.in_frame() {
+                data.append_delay(delay::DelayCommand::Deallocate(self.clone()));
+                return Option::<()>::None;
+            }
+
+            self.execute_deallocate();
+            Option::<()>::None
+        });
+    }
+
+    pub(super) fn execute_deallocate(&mut self) {
+        let Some(backend) = self.backend.take() else {
+            return;
+        };
+
+        if let Some(node) = self.node.take() {
+            let region = if let Ok(node) = node.lock() {
+                node.get_region()
+            } else {
+                utils::Rectangle::default()
+            };
+            // clear
+            backend.write_pixels(vec![], region);
+
+            packing::TreeNode::free(&Some(node));
+            return;
+        }
+
+        let Some(id) = backend.dispose() else {
+            return;
+        };
+        material::process_material(|material| {
+            material.del_atlas(id);
+            Option::<()>::None
+        });
+    }
+
     fn move_to(self, destination: &mut Self) {
-        // TODO: dealloc
+        destination.execute_deallocate();
 
         destination.width = self.width;
         destination.height = self.height;
@@ -242,15 +340,14 @@ impl Image {
         let mut new_image = Self::new(self.width, self.height, self.image_type);
         let region =
             Self::atlas_region_width_padding(self.width, self.height, self.image_type, &self.node);
-        new_image.alloc(Some(atlas_id), false);
+        new_image.allocate(Some(atlas_id), false);
 
         let destination_region = utils::Rectangle::new(0, 0, self.width, self.height);
         let source_region = utils::Rectangle::new(0, 0, self.width, self.height);
 
         if let Some(drawing) = material::process_material(|material| {
-            new_image.drawing_atlas_builtin_nearest(
+            new_image.draw(
                 destination_region,
-                utils::builtin_shader::get_nearest_shader(material.get_renderer()),
                 Some(AtlasDrawingSource {
                     image: self,
                     region: source_region,
@@ -285,8 +382,9 @@ impl Image {
                         .extend_index(vec![0, 1, 2, 1, 2, 3]);
                 })
                 .set_blend(renderer::BLEND_COPY)
-                .set_fill_rule(renderer::FillRule::FillAll)
-                .draw();
+                .set_fill_rule(renderer::FillRule::FillAll);
+
+            drawing.directly_draw();
         }
 
         (true, Some(new_image))
@@ -300,7 +398,7 @@ impl Image {
         Self::atlas_region_width_padding(self.width, self.height, self.image_type, &self.node)
     }
 
-    fn alloc(&mut self, forbidden_atlas_id: Option<renderer::ImageID>, as_source: bool) {
+    fn allocate(&mut self, forbidden_atlas_id: Option<renderer::ImageID>, as_source: bool) {
         if matches!(self.image_type, ImageType::Screen) {
             self.backend = backend::Backend::new(self.width, self.height, false, true);
             return;

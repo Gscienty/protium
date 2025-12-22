@@ -36,7 +36,58 @@ impl Backend {
         })
     }
 
-    pub(super) fn drawing(
+    pub(super) fn write_pixels(&self, pixels: Vec<u8>, region: utils::Rectangle) {
+        let Ok(data) = self.0.lock() else {
+            return;
+        };
+        let (width, height) = data.get_image().get_size();
+        if !region.is_in(&utils::Rectangle::new(0, 0, width, height)) {
+            return;
+        }
+
+        material::process_material(|material| {
+            if pixels.is_empty() {
+                data.get_image()
+                    .drawing(
+                        region,
+                        utils::builtin_shader::get_clear_shader(material.get_renderer()),
+                    )
+                    .append_vertices({
+                        let min_x = region.min.x as f32;
+                        let min_y = region.min.y as f32;
+                        let max_x = region.max.x as f32;
+                        let max_y = region.max.y as f32;
+
+                        vec![min_x, min_y, max_x, min_y, min_x, max_y, max_x, max_y]
+                            .into_iter()
+                            .flat_map(|v| v.to_ne_bytes())
+                            .collect()
+                    })
+                    .append_indexes(vec![0, 1, 2, 1, 2, 3])
+                    .set_blend(renderer::BLEND_CLEAR)
+                    .set_fill_rule(renderer::FillRule::FillAll)
+                    .set_uniforms(utils::builtin_shader::get_clear_uniform(
+                        data.get_image().get_internal_size(),
+                    ))
+                    .draw();
+            } else {
+                data.image.write_pixels(pixels, region);
+            }
+
+            Option::<()>::None
+        });
+    }
+
+    pub(super) fn dispose(&self) -> Option<renderer::ImageID> {
+        let Ok(data) = self.0.lock() else {
+            return None;
+        };
+        data.get_image().dispose();
+
+        Some(data.get_image().get_id())
+    }
+
+    pub(super) fn draw(
         &self,
         region: utils::Rectangle,
         shader: &renderer::Shader,

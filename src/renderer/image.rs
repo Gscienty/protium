@@ -55,6 +55,10 @@ impl Image {
         (self.internal_width, self.internal_height)
     }
 
+    pub(crate) const fn get_size(&self) -> (i32, i32) {
+        (self.width, self.height)
+    }
+
     pub(crate) fn drawing(
         &self,
         region: utils::Rectangle,

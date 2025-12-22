@@ -237,7 +237,7 @@ impl TreeNode<PackingData> {
         None
     }
 
-    fn free(node: &Tree<PackingData>) {
+    pub(super) fn free(node: &Tree<PackingData>) {
         let Some(node) = node.as_ref() else {
             return;
         };

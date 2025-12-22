@@ -41,7 +41,7 @@ where
         region: utils::Rectangle,
         shader: &renderer::Shader,
     ) -> Option<Self> {
-        let renderer_drawing = backend.drawing(region, shader)?;
+        let renderer_drawing = backend.draw(region, shader)?;
         let variable = cell::RefCell::new(T::default());
         variable.borrow_mut().set_destination_region(region);
         variable
@@ -103,7 +103,14 @@ where
         self
     }
 
-    pub(crate) fn draw(&self) {
+    pub(crate) fn draw(self) {}
+
+    pub(crate) fn directly_draw(self) {
+        self.prepare_draw();
+        self.draw();
+    }
+
+    fn prepare_draw(&self) {
         let variable = self.variable.borrow();
 
         let (vertexes, indexes) = variable.serialize_vertex();
@@ -112,7 +119,6 @@ where
         self.renderer_drawing
             .append_vertices(vertexes)
             .append_indexes(indexes)
-            .set_uniforms(uniforms)
-            .draw();
+            .set_uniforms(uniforms);
     }
 }
