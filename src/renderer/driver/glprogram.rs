@@ -1,7 +1,7 @@
 use super::{BufferID, ProgramID, VertexArrayID, glhandler};
 use std::{cell, collections};
 
-#[derive(Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct GLVertexLayoutPart {
     elements_count: usize,
     size: usize,
@@ -24,7 +24,7 @@ pub trait GLVertexEntity {
     fn index(&self) -> u32;
 }
 
-#[derive(Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct GLVertexLayout {
     parts: Vec<GLVertexLayoutPart>,
     size: usize,

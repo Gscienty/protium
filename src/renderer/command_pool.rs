@@ -110,6 +110,9 @@ impl CommandPool {
         layout: &driver::GLVertexLayout,
         cmd: command::DrawTriangles,
     ) {
+        cmd.for_each_sources(|source| {
+            self.flush_write_pixels(source.get_image());
+        });
         self.flush_write_pixels(cmd.get_destination());
 
         let vertices_offset = self.vertices.len();

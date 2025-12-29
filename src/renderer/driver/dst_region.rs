@@ -1,5 +1,6 @@
 use crate::utils;
 
+#[derive(Debug)]
 pub(crate) struct DstRegion {
     region: utils::Rectangle,
     count: i32,

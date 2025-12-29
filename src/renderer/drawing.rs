@@ -4,7 +4,7 @@ use tokio::sync::mpsc;
 
 use crate::utils;
 
-use super::{ImageID, ShaderID, command, driver, image};
+use super::{ImageID, ShaderID, command, driver};
 
 struct DrawingData {
     destination: ImageID,
@@ -60,12 +60,10 @@ impl Drawing {
         self
     }
 
-    pub(crate) fn set_source(&self, name: &str, image: &image::Image) -> &Self {
+    pub(crate) fn set_source(&self, name: &str, image: ImageID) -> &Self {
         let mut data = self.data.borrow_mut();
-        data.sources.push(command::DrawTriangleSourceArg::new(
-            name.to_owned(),
-            image.get_id(),
-        ));
+        data.sources
+            .push(command::DrawTriangleSourceArg::new(name.to_owned(), image));
 
         self
     }

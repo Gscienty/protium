@@ -1,11 +1,12 @@
 use crate::{renderer, utils};
 
-#[derive(PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq)]
 pub(crate) struct DrawTriangleSourceArg {
     name: String,
     image: renderer::ImageID,
 }
 
+#[derive(Debug)]
 pub(crate) struct DrawTriangles {
     destination: renderer::ImageID,
     sources: Vec<DrawTriangleSourceArg>,
@@ -18,6 +19,7 @@ pub(crate) struct DrawTriangles {
     fill_rule: renderer::driver::FillRule,
 }
 
+#[derive(Debug)]
 pub(crate) struct InternalDrawTriangles {
     destination: renderer::ImageID,
     sources: Vec<DrawTriangleSourceArg>,
@@ -193,6 +195,15 @@ impl DrawTriangles {
 
     pub(crate) fn get_indexes(&self) -> &[u32] {
         &self.indexes
+    }
+
+    pub(crate) fn for_each_sources<F>(&self, mut cb: F)
+    where
+        F: FnMut(&DrawTriangleSourceArg),
+    {
+        for source in self.sources.iter() {
+            cb(source);
+        }
     }
 }
 

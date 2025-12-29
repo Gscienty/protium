@@ -12,9 +12,9 @@ pub trait DrawingVariable: Sized + Default {
         source_region: utils::Rectangle,
     );
 
-    fn set_destination_size(&mut self, size: (i32, i32));
+    fn set_destination_atlas_size(&mut self, size: (i32, i32));
 
-    fn set_source_size(&mut self, size: (i32, i32));
+    fn set_source_atlas_size(&mut self, size: (i32, i32));
 
     fn set_destination_region(&mut self, region: utils::Rectangle);
 
@@ -46,7 +46,7 @@ where
         variable.borrow_mut().set_destination_region(region);
         variable
             .borrow_mut()
-            .set_destination_size(backend.get_image_internal_size());
+            .set_destination_atlas_size(backend.get_image_internal_size());
 
         Some(Self {
             backend: backend.clone(),
@@ -70,13 +70,14 @@ where
                 material.add_inframe_source(atlas_image_id);
                 Option::<()>::None
             });
+            self.renderer_drawing.set_source(name, atlas_image_id);
         }
 
         let mut variable = self.variable.borrow_mut();
         variable.set_source_region(name, source_atlas_region, region);
         if let Some(size) = image.process_backend(|backend| Some(backend.get_image_internal_size()))
         {
-            variable.set_source_size(size);
+            variable.set_source_atlas_size(size);
         }
 
         self

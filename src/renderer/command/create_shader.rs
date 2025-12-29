@@ -1,5 +1,6 @@
 use crate::renderer;
 
+#[derive(Debug)]
 pub(crate) struct CreateShader {
     id: renderer::ShaderID,
     vertex_source: String,

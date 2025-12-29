@@ -10,6 +10,7 @@ pub(super) use draw_triangles::{DrawTriangleSourceArg, DrawTriangles, InternalDr
 pub(super) use read_pixels::ReadPixels;
 pub(super) use write_pixels::{InternalWritePixels, WritePixels, WritePixelsArg};
 
+#[derive(Debug)]
 pub(super) enum Command {
     CreateImage(CreateImage),
     DisposeImage(super::ImageID),

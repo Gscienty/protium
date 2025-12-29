@@ -3,16 +3,19 @@ use crate::{
     utils,
 };
 
+#[derive(Debug)]
 pub(crate) struct WritePixelsArg {
     pixels: Vec<u8>,
     region: utils::Rectangle,
 }
 
+#[derive(Debug)]
 pub(crate) struct WritePixels {
     destination: renderer::ImageID,
     arg: WritePixelsArg,
 }
 
+#[derive(Debug)]
 pub(crate) struct InternalWritePixels {
     destination: renderer::ImageID,
     args: Vec<WritePixelsArg>,

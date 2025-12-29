@@ -193,7 +193,7 @@ impl BackendData {
                 utils::Rectangle::new(0, 0, origin_image_width, origin_image_height),
                 utils::builtin_shader::get_nearest_shader(renderer),
             )
-            .set_source("source", &self.image)
+            .set_source("source", self.image.get_id())
             .append_vertices({
                 let width = origin_image_width as f32;
                 let height = origin_image_height as f32;

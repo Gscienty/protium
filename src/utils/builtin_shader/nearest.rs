@@ -27,8 +27,8 @@ uniform sampler2D source;
 out vec4 out_color;
 void main() {
     vec4 pos_color = texture(source, frag_source_pos / source_size);
-    vec2 pos = frag_source_pos / source_size - source_region_pos;
     out_color = pos_color * frag_color;
+    // out_color = vec4(1.0, 1.0, 1.0, 1.0);
 }"##;
 
 fn create_shader(renderer: &renderer::Renderer) -> renderer::Shader {
@@ -74,7 +74,7 @@ pub(crate) fn get_nearest_uniform(
     src_pos: (i32, i32),
     src: (i32, i32),
 ) -> Vec<u8> {
-    vec![
+    [
         // projection
         (2. / dst_view.0 as f32),
         0.,

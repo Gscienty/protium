@@ -2,6 +2,7 @@ use tokio::sync::mpsc;
 
 use crate::{renderer, utils};
 
+#[derive(Debug)]
 pub(crate) struct ReadPixels {
     id: renderer::ImageID,
     regions: Vec<utils::Rectangle>,

@@ -1,10 +1,10 @@
-use std::collections::{BTreeMap, btree_map::Iter};
+use std::slice;
 
 use super::{ProgramID, graphics, shader_type};
 
 pub(crate) struct Shader {
     program: ProgramID,
-    uniform_types: BTreeMap<String, shader_type::ShaderType>,
+    uniform_types: Vec<(String, shader_type::ShaderType)>,
     texels: bool,
 }
 
@@ -14,19 +14,16 @@ impl Shader {
         uniforms: impl Iterator<Item = &'a (String, shader_type::ShaderType)>,
         texels: bool,
     ) -> Self {
-        let mut uniform_types = BTreeMap::new();
-        for (name, typ) in uniforms {
-            uniform_types.insert(name.to_owned(), typ.clone());
-        }
-
         Self {
             program,
-            uniform_types,
+            uniform_types: uniforms
+                .map(|(name, typ)| (name.to_owned(), typ.clone()))
+                .collect(),
             texels,
         }
     }
 
-    pub(super) fn iter_uniform_types(&self) -> Iter<'_, String, shader_type::ShaderType> {
+    pub(super) fn iter_uniform_types(&self) -> slice::Iter<(String, shader_type::ShaderType)> {
         self.uniform_types.iter()
     }
 

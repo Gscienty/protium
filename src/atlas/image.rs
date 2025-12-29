@@ -21,13 +21,13 @@ pub(crate) struct Image {
     image_type: ImageType,
 }
 
-pub(crate) struct AtlasDrawingVertexEntity {
+pub(crate) struct AtlasDrawingQuatEntity {
     destination_point: utils::Point,
     source_point: utils::Point,
     color: (f32, f32, f32, f32),
 }
 
-impl AtlasDrawingVertexEntity {
+impl AtlasDrawingQuatEntity {
     pub(crate) fn new(
         destination_point: utils::Point,
         source_point: utils::Point,
@@ -40,7 +40,26 @@ impl AtlasDrawingVertexEntity {
         }
     }
 
-    fn serialize(&self, destination_offset: utils::Point, source_offset: utils::Point) -> Vec<u8> {
+    fn serialize(
+        &self,
+        destination_offset: utils::Point,
+        source_offset: utils::Point,
+        size: (f32, f32),
+    ) -> Vec<u8> {
+        crate::log(&format!(
+            "vartex {:?}",
+            [
+                (self.destination_point.x + destination_offset.x) as f32,
+                (self.destination_point.y + destination_offset.y) as f32,
+                (self.source_point.x + source_offset.x) as f32,
+                (self.source_point.y + source_offset.y) as f32,
+                self.color.0,
+                self.color.1,
+                self.color.2,
+                self.color.3,
+            ]
+        ));
+
         [
             (self.destination_point.x + destination_offset.x) as f32,
             (self.destination_point.y + destination_offset.y) as f32,
@@ -57,9 +76,101 @@ impl AtlasDrawingVertexEntity {
     }
 }
 
+pub(crate) struct AtlasDrawingMaterialEntity {
+    source_region: utils::Rectangle,
+    arg: (f32, f32, f32, f32),
+    t: (f32, f32),
+    color: (f32, f32, f32, f32),
+}
+
+impl AtlasDrawingMaterialEntity {
+    pub(crate) fn new(
+        source_region: utils::Rectangle,
+        arg: (f32, f32, f32, f32),
+        t: (f32, f32),
+        color: (f32, f32, f32, f32),
+    ) -> Self {
+        Self {
+            source_region,
+            arg,
+            t,
+            color,
+        }
+    }
+
+    fn serialize(&self, destination_offset: utils::Point, source_offset: utils::Point) -> Vec<u8> {
+        let x = (self.source_region.max.x - self.source_region.min.x) as f32;
+        let y = (self.source_region.max.y - self.source_region.min.y) as f32;
+        let ax = self.arg.0 * x;
+        let by = self.arg.1 * y;
+        let cx = self.arg.2 * x;
+        let dy = self.arg.3 * y;
+        let u0 = self.source_region.min.x as f32 + source_offset.x as f32;
+        let v0 = self.source_region.min.y as f32 + source_offset.y as f32;
+        let u1 = self.source_region.max.x as f32 + source_offset.x as f32;
+        let v1 = self.source_region.max.y as f32 + source_offset.y as f32;
+
+        [
+            Self::adjust(self.t.0) + destination_offset.x as f32,
+            Self::adjust(self.t.1) + destination_offset.y as f32,
+            u0,
+            v0,
+            self.color.0,
+            self.color.1,
+            self.color.2,
+            self.color.3,
+            Self::adjust(ax + self.t.0) + destination_offset.x as f32,
+            Self::adjust(cx + self.t.1) + destination_offset.y as f32,
+            u1,
+            v0,
+            self.color.0,
+            self.color.1,
+            self.color.2,
+            self.color.3,
+            Self::adjust(by + self.t.0) + destination_offset.x as f32,
+            Self::adjust(dy + self.t.1) + destination_offset.y as f32,
+            u0,
+            v1,
+            self.color.0,
+            self.color.1,
+            self.color.2,
+            self.color.3,
+            Self::adjust(ax + by + self.t.0) + destination_offset.x as f32,
+            Self::adjust(cx + dy + self.t.1) + destination_offset.y as f32,
+            u1,
+            v1,
+            self.color.0,
+            self.color.1,
+            self.color.2,
+            self.color.3,
+        ]
+        .iter()
+        .flat_map(|v| v.to_ne_bytes())
+        .collect()
+    }
+
+    fn adjust(x: f32) -> f32 {
+        let mut x_int = (x as i32) as f32;
+        if x < 0. && x != x_int {
+            x_int -= 1.;
+        }
+        let frac = x - x_int;
+
+        if frac < (3. / 16.) {
+            x_int
+        } else if frac < (8. / 16.) {
+            x_int + (5. / 16.)
+        } else if frac < (13. / 16.) {
+            x_int + (11. / 16.)
+        } else {
+            x_int + 1.
+        }
+    }
+}
+
 #[derive(Default)]
 pub(crate) struct AtlasDrawingVariable {
-    vertex_list: Vec<AtlasDrawingVertexEntity>,
+    vertex: Vec<u8>,
     indexes: Vec<u32>,
     destination_atlas_region: utils::Rectangle,
     source_atlas_region: utils::Rectangle,
@@ -70,8 +181,29 @@ pub(crate) struct AtlasDrawingVariable {
 }
 
 impl AtlasDrawingVariable {
-    pub(crate) fn extend_vertex(&mut self, vertex: Vec<AtlasDrawingVertexEntity>) -> &mut Self {
-        self.vertex_list.extend(vertex);
+    pub(crate) fn quad(&mut self, vertex: [AtlasDrawingQuatEntity; 4]) -> &mut Self {
+        self.vertex = vertex
+            .iter()
+            .flat_map(|vertex| {
+                vertex.serialize(
+                    self.destination_atlas_region.min,
+                    self.source_atlas_region.min,
+                    (
+                        self.source_atlas_size.0 as f32,
+                        self.source_atlas_size.1 as f32,
+                    ),
+                )
+            })
+            .collect();
+
+        self
+    }
+
+    pub(crate) fn material(&mut self, vertex: AtlasDrawingMaterialEntity) -> &mut Self {
+        self.vertex = vertex.serialize(
+            self.destination_atlas_region.min,
+            self.source_atlas_region.min,
+        );
 
         self
     }
@@ -114,25 +246,14 @@ impl drawing::DrawingVariable for AtlasDrawingVariable {
     }
 
     fn serialize_vertex(&self) -> (Vec<u8>, Vec<u32>) {
-        let vertex = self
-            .vertex_list
-            .iter()
-            .flat_map(|vertex| {
-                vertex.serialize(
-                    self.destination_atlas_region.min,
-                    self.source_atlas_region.min,
-                )
-            })
-            .collect();
-
-        (vertex, self.indexes.to_owned())
+        (self.vertex.to_owned(), self.indexes.to_owned())
     }
 
-    fn set_destination_size(&mut self, size: (i32, i32)) {
+    fn set_destination_atlas_size(&mut self, size: (i32, i32)) {
         self.destination_atlas_size = size;
     }
 
-    fn set_source_size(&mut self, size: (i32, i32)) {
+    fn set_source_atlas_size(&mut self, size: (i32, i32)) {
         self.source_atlas_size = size;
     }
 }
@@ -252,7 +373,8 @@ impl Image {
             return;
         }
 
-        let mut atlas_pixels = vec![0u8; (self.width + self.height * 4) as usize];
+        let mut atlas_pixels =
+            vec![0u8; (atlas_region.get_width() * atlas_region.get_height() * 4) as usize];
         let width = region.get_width();
         let atlas_width = atlas_region.get_width();
         for i in 0..region.get_height() {
@@ -267,6 +389,11 @@ impl Image {
             }
         }
         self.process_backend(|backend| {
+            crate::log(&format!(
+                "{:?} {:?}",
+                backend.get_image_internal_size(),
+                atlas_region,
+            ));
             backend.write_pixels(atlas_pixels, atlas_region);
             Option::<()>::None
         });
@@ -376,23 +503,23 @@ impl Image {
             drawing
                 .process_variable(|mut variable| {
                     variable
-                        .extend_vertex(vec![
-                            AtlasDrawingVertexEntity::new(
+                        .quad([
+                            AtlasDrawingQuatEntity::new(
                                 utils::Point::new(0, 0),
                                 utils::Point::new(0, 0),
                                 (1., 1., 1., 1.),
                             ),
-                            AtlasDrawingVertexEntity::new(
+                            AtlasDrawingQuatEntity::new(
                                 utils::Point::new(self.width, 0),
                                 utils::Point::new(self.width, 0),
                                 (1., 1., 1., 1.),
                             ),
-                            AtlasDrawingVertexEntity::new(
+                            AtlasDrawingQuatEntity::new(
                                 utils::Point::new(0, self.height),
                                 utils::Point::new(0, self.height),
                                 (1., 1., 1., 1.),
                             ),
-                            AtlasDrawingVertexEntity::new(
+                            AtlasDrawingQuatEntity::new(
                                 utils::Point::new(self.width, self.height),
                                 utils::Point::new(self.width, self.height),
                                 (1., 1., 1., 1.),
@@ -478,6 +605,7 @@ impl Image {
                 return true; // continue for_each atlas
             };
 
+
             self.backend.replace(backend.clone());
             self.node.replace(node);
             finded = true;
@@ -508,12 +636,12 @@ impl Image {
             }
         }
         // regular, a part of material, but create new material
-        let mut page = packing::Page::new(w, h, max_size);
-        let node = page.alloc(width, height);
-
-        self.backend =
-            backend::Backend::new(material_data, material, width, height, as_source, false);
-        self.node = node;
+        if let Some(backend) =
+            backend::Backend::new(material_data, material, w, h, as_source, false)
+        {
+            self.node = backend.alloc_node(material.get_renderer(), width, height, |_| true);
+            self.backend = Some(backend);
+        }
     }
 
     fn atlas_region_width_padding(

@@ -1,5 +1,6 @@
 use crate::renderer;
 
+#[derive(Debug)]
 pub(crate) struct CreateImage {
     id: renderer::ImageID,
     width: i32,
