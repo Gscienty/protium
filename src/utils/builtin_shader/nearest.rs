@@ -21,8 +21,6 @@ precision mediump float;
 in vec2 frag_source_pos;
 in vec4 frag_color;
 uniform vec2 source_size;
-uniform vec2 source_region_pos;
-uniform vec2 source_region_size;
 uniform sampler2D source;
 out vec4 out_color;
 void main() {
@@ -50,14 +48,6 @@ fn create_shader(renderer: &renderer::Renderer) -> renderer::Shader {
                 "source_size".to_owned(),
                 renderer::ShaderBasicType::Vec2.into(),
             ),
-            (
-                "source_region_pos".to_owned(),
-                renderer::ShaderBasicType::Vec2.into(),
-            ),
-            (
-                "source_region_size".to_owned(),
-                renderer::ShaderBasicType::Vec2.into(),
-            ),
         ],
     )
 }
@@ -68,12 +58,7 @@ pub(crate) fn get_nearest_shader(renderer: &renderer::Renderer) -> &renderer::Sh
     SHADER.get_or_init(|| create_shader(renderer))
 }
 
-pub(crate) fn get_nearest_uniform(
-    dst_view: (i32, i32),
-    src_view: (i32, i32),
-    src_pos: (i32, i32),
-    src: (i32, i32),
-) -> Vec<u8> {
+pub(crate) fn get_nearest_uniform(dst_view: (i32, i32), src_view: (i32, i32)) -> Vec<u8> {
     [
         // projection
         (2. / dst_view.0 as f32),
@@ -95,12 +80,6 @@ pub(crate) fn get_nearest_uniform(
         // source_size
         src_view.0 as f32,
         src_view.1 as f32,
-        // source region pos
-        (src_pos.0 as f32 / src_view.0 as f32),
-        (src_pos.1 as f32 / src_view.1 as f32),
-        // source region size
-        (src.0 as f32 / src_view.0 as f32),
-        (src.1 as f32 / src_view.1 as f32),
     ]
     .into_iter()
     .flat_map(|v| v.to_ne_bytes())

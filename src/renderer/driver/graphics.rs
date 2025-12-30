@@ -98,7 +98,6 @@ impl Graphics {
         let mut offset = 0;
         let mut uniform_variables = Vec::new();
         for (name, typ) in shader.iter_uniform_types() {
-            crate::log(&format!("{} {}", name, offset));
             let bytes = typ.bytes_count();
             uniform_variables.push(uniform_variable::UniformVariable::new(
                 name,

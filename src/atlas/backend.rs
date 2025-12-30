@@ -212,8 +212,6 @@ impl BackendData {
             .set_uniforms(utils::builtin_shader::get_nearest_uniform(
                 new_image.get_internal_size(),
                 self.image.get_internal_size(),
-                (0, 0),
-                (origin_image_width, origin_image_height),
             ))
             .draw();
 

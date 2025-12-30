@@ -2,15 +2,10 @@ use std::cell;
 
 use crate::{renderer, utils};
 
-use super::{backend, delay, image, material, packing};
+use super::{backend, delay, image, material};
 
 pub trait DrawingVariable: Sized + Default {
-    fn set_source_region(
-        &mut self,
-        name: &str,
-        atlas_region: utils::Rectangle,
-        source_region: utils::Rectangle,
-    );
+    fn set_source_region(&mut self, atlas_region: utils::Rectangle);
 
     fn set_destination_atlas_size(&mut self, size: (i32, i32));
 
@@ -27,7 +22,6 @@ pub(crate) struct Drawing<T>
 where
     T: DrawingVariable,
 {
-    backend: backend::Backend,
     renderer_drawing: renderer::Drawing,
     variable: cell::RefCell<T>,
 }
@@ -49,20 +43,13 @@ where
             .set_destination_atlas_size(backend.get_image_internal_size());
 
         Some(Self {
-            backend: backend.clone(),
             renderer_drawing,
             variable,
         })
     }
 
-    pub(crate) fn set_source(
-        &self,
-        name: &str,
-        image: &image::Image,
-        region: utils::Rectangle,
-    ) -> &Self {
+    pub(crate) fn set_source(&self, name: &str, image: &image::Image) -> &Self {
         let source_atlas_region = image.get_atlas_region();
-        let region = region.add(source_atlas_region.min);
 
         let atlas_image_id = image.process_backend(|backend| backend.get_atlas_id());
         if let Some(atlas_image_id) = atlas_image_id {
@@ -74,7 +61,7 @@ where
         }
 
         let mut variable = self.variable.borrow_mut();
-        variable.set_source_region(name, source_atlas_region, region);
+        variable.set_source_region(source_atlas_region);
         if let Some(size) = image.process_backend(|backend| Some(backend.get_image_internal_size()))
         {
             variable.set_source_atlas_size(size);
@@ -107,7 +94,7 @@ where
     pub(crate) fn draw(self) {
         self.prepare_draw();
 
-        material::process_material_data(|data, material| {
+        material::process_material_data(|data, _| {
             if !data.in_frame() {
                 data.append_delay(delay::DelayCommand::Draw(self.renderer_drawing));
                 return Option::<()>::None;

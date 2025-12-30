@@ -1,4 +1,4 @@
-use std::{ptr, sync};
+use std::ptr;
 
 use crate::{renderer, utils};
 
@@ -22,53 +22,59 @@ pub(crate) struct Image {
 }
 
 pub(crate) struct AtlasDrawingQuatEntity {
-    destination_point: utils::Point,
-    source_point: utils::Point,
-    color: (f32, f32, f32, f32),
+    destination: utils::Rectangle,
+    source: utils::Rectangle,
+
+    color: [(f32, f32, f32, f32); 4],
 }
 
 impl AtlasDrawingQuatEntity {
     pub(crate) fn new(
-        destination_point: utils::Point,
-        source_point: utils::Point,
-        color: (f32, f32, f32, f32),
+        destination: utils::Rectangle,
+        source: utils::Rectangle,
+        color: [(f32, f32, f32, f32); 4],
     ) -> Self {
         Self {
-            destination_point,
-            source_point,
+            destination,
+            source,
             color,
         }
     }
 
-    fn serialize(
-        &self,
-        destination_offset: utils::Point,
-        source_offset: utils::Point,
-        size: (f32, f32),
-    ) -> Vec<u8> {
-        crate::log(&format!(
-            "vartex {:?}",
-            [
-                (self.destination_point.x + destination_offset.x) as f32,
-                (self.destination_point.y + destination_offset.y) as f32,
-                (self.source_point.x + source_offset.x) as f32,
-                (self.source_point.y + source_offset.y) as f32,
-                self.color.0,
-                self.color.1,
-                self.color.2,
-                self.color.3,
-            ]
-        ));
-
+    fn serialize(&self, destination_offset: utils::Point, source_offset: utils::Point) -> Vec<u8> {
         [
-            (self.destination_point.x + destination_offset.x) as f32,
-            (self.destination_point.y + destination_offset.y) as f32,
-            (self.source_point.x + source_offset.x) as f32,
-            (self.source_point.y + source_offset.y) as f32,
-            self.color.0,
-            self.color.1,
-            self.color.2,
-            self.color.3,
+            (self.destination.min.x + destination_offset.x) as f32,
+            (self.destination.min.y + destination_offset.y) as f32,
+            (self.source.min.x + source_offset.x) as f32,
+            (self.source.min.y + source_offset.y) as f32,
+            self.color[0].0,
+            self.color[0].1,
+            self.color[0].2,
+            self.color[0].3,
+            (self.destination.min.x + destination_offset.x) as f32,
+            (self.destination.max.y + destination_offset.y) as f32,
+            (self.source.min.x + source_offset.x) as f32,
+            (self.source.max.y + source_offset.y) as f32,
+            self.color[1].0,
+            self.color[1].1,
+            self.color[1].2,
+            self.color[1].3,
+            (self.destination.max.x + destination_offset.x) as f32,
+            (self.destination.min.y + destination_offset.y) as f32,
+            (self.source.max.x + source_offset.x) as f32,
+            (self.source.min.y + source_offset.y) as f32,
+            self.color[2].0,
+            self.color[2].1,
+            self.color[2].2,
+            self.color[2].3,
+            (self.destination.max.x + destination_offset.x) as f32,
+            (self.destination.max.y + destination_offset.y) as f32,
+            (self.source.max.x + source_offset.x) as f32,
+            (self.source.max.y + source_offset.y) as f32,
+            self.color[3].0,
+            self.color[3].1,
+            self.color[3].2,
+            self.color[3].3,
         ]
         .iter()
         .flat_map(|v| v.to_ne_bytes())
@@ -174,27 +180,18 @@ pub(crate) struct AtlasDrawingVariable {
     indexes: Vec<u32>,
     destination_atlas_region: utils::Rectangle,
     source_atlas_region: utils::Rectangle,
-    source_region: utils::Rectangle,
 
     destination_atlas_size: (i32, i32),
     source_atlas_size: (i32, i32),
 }
 
 impl AtlasDrawingVariable {
-    pub(crate) fn quad(&mut self, vertex: [AtlasDrawingQuatEntity; 4]) -> &mut Self {
-        self.vertex = vertex
-            .iter()
-            .flat_map(|vertex| {
-                vertex.serialize(
-                    self.destination_atlas_region.min,
-                    self.source_atlas_region.min,
-                    (
-                        self.source_atlas_size.0 as f32,
-                        self.source_atlas_size.1 as f32,
-                    ),
-                )
-            })
-            .collect();
+    pub(crate) fn quad(&mut self, vertex: AtlasDrawingQuatEntity) -> &mut Self {
+        self.vertex = vertex.serialize(
+            self.destination_atlas_region.min,
+            self.source_atlas_region.min,
+        );
+        self.extend_index(vec![0, 1, 2, 1, 2, 3]);
 
         self
     }
@@ -224,25 +221,11 @@ impl drawing::DrawingVariable for AtlasDrawingVariable {
         utils::builtin_shader::get_nearest_uniform(
             self.destination_atlas_size,
             self.source_atlas_size,
-            (
-                self.source_atlas_region.min.x,
-                self.source_atlas_region.min.y,
-            ),
-            (
-                self.source_region.get_width(),
-                self.source_region.get_height(),
-            ),
         )
     }
 
-    fn set_source_region(
-        &mut self,
-        name: &str,
-        atlas_region: utils::Rectangle,
-        source_region: utils::Rectangle,
-    ) {
+    fn set_source_region(&mut self, atlas_region: utils::Rectangle) {
         self.source_atlas_region = atlas_region;
-        self.source_region = source_region;
     }
 
     fn serialize_vertex(&self) -> (Vec<u8>, Vec<u32>) {
@@ -255,20 +238,6 @@ impl drawing::DrawingVariable for AtlasDrawingVariable {
 
     fn set_source_atlas_size(&mut self, size: (i32, i32)) {
         self.source_atlas_size = size;
-    }
-}
-
-pub(crate) struct AtlasDrawingSource<'a> {
-    image: &'a Image,
-    region: utils::Rectangle,
-}
-
-impl<'a> AtlasDrawingSource<'a> {
-    pub(crate) fn new(
-        image: &'a Image,
-        region: utils::Rectangle,
-    ) -> Option<AtlasDrawingSource<'a>> {
-        Some(Self { image, region })
     }
 }
 
@@ -293,15 +262,16 @@ impl Image {
         cb(backend)
     }
 
+    pub(crate) fn get_size(&self) -> (i32, i32) {
+        (self.width, self.height)
+    }
+
     pub(crate) fn draw(
         &mut self,
         region: utils::Rectangle,
-        source: Option<AtlasDrawingSource<'_>>,
+        source: Option<&'_ Image>,
     ) -> Option<drawing::Drawing<AtlasDrawingVariable>> {
-        if let Some(atlas_id) = source
-            .as_ref()
-            .and_then(|source| source.image.get_atlas_id())
-        {
+        if let Some(atlas_id) = source.as_ref().and_then(|source| source.get_atlas_id()) {
             material::process_material(|material| {
                 material.add_inframe_source(atlas_id);
                 Option::<()>::None
@@ -309,13 +279,11 @@ impl Image {
         }
 
         material::process_material_data(|data, material| {
-            self.isolate(data, material, source.as_ref().map(|source| source.image));
+            self.isolate(data, material, source);
             Option::<()>::None
         });
 
-        let atlas_region =
-            Self::atlas_region_width_padding(self.width, self.height, self.image_type, &self.node);
-        let region = region.add(atlas_region.min);
+        let region = region.add(self.get_atlas_region().min);
         let backend = self.backend.as_ref()?;
 
         let drawing = material::process_material(|material| {
@@ -326,7 +294,7 @@ impl Image {
             )
         })?;
         if let Some(source) = source.as_ref() {
-            drawing.set_source("source", source.image, source.region);
+            drawing.set_source("source", source);
         }
         Some(drawing)
     }
@@ -389,11 +357,6 @@ impl Image {
             }
         }
         self.process_backend(|backend| {
-            crate::log(&format!(
-                "{:?} {:?}",
-                backend.get_image_internal_size(),
-                atlas_region,
-            ));
             backend.write_pixels(atlas_pixels, atlas_region);
             Option::<()>::None
         });
@@ -416,7 +379,7 @@ impl Image {
     }
 
     pub(crate) fn deallocate(&mut self) {
-        material::process_material_data(|data, material| {
+        material::process_material_data(|data, _| {
             if !data.in_frame() {
                 data.append_delay(delay::DelayCommand::Deallocate(self.clone()));
                 return Option::<()>::None;
@@ -477,55 +440,29 @@ impl Image {
         if self.node.is_none() {
             return (true, None);
         }
-        if !matches!(
-            source.as_ref().and_then(|source| source.get_atlas_id()),
-            Some(atlas_id)
-        ) {
+        if source
+            .as_ref()
+            .and_then(|source| source.get_atlas_id())
+            .ne(&Some(atlas_id))
+        {
             return (true, None);
         }
         let mut new_image = Self::new(self.width, self.height, self.image_type);
-        let region =
-            Self::atlas_region_width_padding(self.width, self.height, self.image_type, &self.node);
+        // let region =
+        //     Self::atlas_region_width_padding(self.width, self.height, self.image_type, &self.node);
         new_image.allocate(material_data, material, Some(atlas_id), false);
 
         let destination_region = utils::Rectangle::new(0, 0, self.width, self.height);
-        let source_region = utils::Rectangle::new(0, 0, self.width, self.height);
+        // let source_region = utils::Rectangle::new(0, 0, self.width, self.height);
 
-        if let Some(drawing) = material::process_material(|material| {
-            new_image.draw(
-                destination_region,
-                Some(AtlasDrawingSource {
-                    image: self,
-                    region: source_region,
-                }),
-            )
-        }) {
+        if let Some(drawing) = new_image.draw(destination_region, Some(self)) {
             drawing
                 .process_variable(|mut variable| {
-                    variable
-                        .quad([
-                            AtlasDrawingQuatEntity::new(
-                                utils::Point::new(0, 0),
-                                utils::Point::new(0, 0),
-                                (1., 1., 1., 1.),
-                            ),
-                            AtlasDrawingQuatEntity::new(
-                                utils::Point::new(self.width, 0),
-                                utils::Point::new(self.width, 0),
-                                (1., 1., 1., 1.),
-                            ),
-                            AtlasDrawingQuatEntity::new(
-                                utils::Point::new(0, self.height),
-                                utils::Point::new(0, self.height),
-                                (1., 1., 1., 1.),
-                            ),
-                            AtlasDrawingQuatEntity::new(
-                                utils::Point::new(self.width, self.height),
-                                utils::Point::new(self.width, self.height),
-                                (1., 1., 1., 1.),
-                            ),
-                        ])
-                        .extend_index(vec![0, 1, 2, 1, 2, 3]);
+                    variable.quad(AtlasDrawingQuatEntity::new(
+                        utils::Rectangle::new(0, 0, self.width, self.height),
+                        utils::Rectangle::new(0, 0, self.width, self.height),
+                        [(1., 1., 1., 1.); 4],
+                    ));
                 })
                 .set_blend(renderer::BLEND_COPY)
                 .set_fill_rule(renderer::FillRule::FillAll);
@@ -584,8 +521,6 @@ impl Image {
         }
 
         // regular, a part of material
-        let self_image_id = self.process_backend(|backend| backend.get_atlas_id());
-
         let mut finded = false;
         material_data.for_each_atlas(|backend| {
             let Some(node) = backend.alloc_node(material.get_renderer(), width, height, |backend| {
