@@ -4,6 +4,7 @@ use crate::utils;
 
 pub(super) type Tree<T> = Option<sync::Arc<sync::Mutex<TreeNode<T>>>>;
 
+#[derive(Debug)]
 pub(super) struct TreeNode<T> {
     value: T,
 
@@ -12,11 +13,13 @@ pub(super) struct TreeNode<T> {
     child_1: Tree<T>,
 }
 
+#[derive(Debug)]
 pub(super) struct PackingData {
     used: bool,
     region: utils::Rectangle,
 }
 
+#[derive(Debug)]
 pub(super) struct Page {
     root: Tree<PackingData>,
 

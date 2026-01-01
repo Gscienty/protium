@@ -4,6 +4,7 @@ use crate::{renderer, utils};
 
 use super::{material, packing};
 
+#[derive(Debug)]
 pub(super) struct BackendData {
     page: packing::Page,
     image: renderer::Image,
@@ -11,7 +12,7 @@ pub(super) struct BackendData {
     screen: bool,
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub(super) struct Backend(sync::Arc<sync::Mutex<BackendData>>);
 
 impl Backend {

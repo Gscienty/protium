@@ -4,6 +4,7 @@ use crate::utils;
 
 use super::{ImageID, command, drawing, driver, shader};
 
+#[derive(Debug)]
 pub(crate) struct Image {
     id: ImageID,
     sender: mpsc::UnboundedSender<command::Command>,

@@ -1,20 +1,25 @@
-use std::ptr;
+use std::{ptr, sync};
 
 use crate::{renderer, utils};
 
 use super::{backend, delay, drawing, material, packing};
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 pub(crate) enum ImageType {
     Regular,
     Screen,
     Volatile,
 }
 
-#[derive(Clone)]
+#[derive(Debug)]
+pub(super) struct ImageData {
+    pub(super) backend: Option<backend::Backend>,
+    pub(super) node: packing::Tree<packing::PackingData>,
+}
+
+#[derive(Clone, Debug)]
 pub(crate) struct Image {
-    backend: Option<backend::Backend>,
-    node: packing::Tree<packing::PackingData>,
+    data: sync::Arc<sync::Mutex<ImageData>>,
 
     width: i32,
     height: i32,
@@ -115,7 +120,6 @@ impl AtlasDrawingMaterialEntity {
         let v0 = self.source_region.min.y as f32 + source_offset.y as f32;
         let u1 = self.source_region.max.x as f32 + source_offset.x as f32;
         let v1 = self.source_region.max.y as f32 + source_offset.y as f32;
-
         [
             Self::adjust(self.t.0) + destination_offset.x as f32,
             Self::adjust(self.t.1) + destination_offset.y as f32,
@@ -201,6 +205,7 @@ impl AtlasDrawingVariable {
             self.destination_atlas_region.min,
             self.source_atlas_region.min,
         );
+        self.extend_index(vec![0, 1, 2, 1, 2, 3]);
 
         self
     }
@@ -244,12 +249,14 @@ impl drawing::DrawingVariable for AtlasDrawingVariable {
 impl Image {
     pub(crate) fn new(width: i32, height: i32, image_type: ImageType) -> Self {
         Self {
+            data: sync::Arc::new(sync::Mutex::new(ImageData {
+                backend: None,
+                node: None,
+            })),
+
             width,
             height,
             image_type,
-
-            backend: None,
-            node: None,
         }
     }
 
@@ -257,7 +264,10 @@ impl Image {
     where
         F: FnOnce(&backend::Backend) -> Option<T>,
     {
-        let backend = self.backend.as_ref()?;
+        let Ok(data) = self.data.lock() else {
+            return None;
+        };
+        let backend = data.backend.as_ref()?;
 
         cb(backend)
     }
@@ -284,15 +294,16 @@ impl Image {
         });
 
         let region = region.add(self.get_atlas_region().min);
-        let backend = self.backend.as_ref()?;
-
-        let drawing = material::process_material(|material| {
-            drawing::Drawing::new(
-                backend,
-                region,
-                utils::builtin_shader::get_nearest_shader(material.get_renderer()),
-            )
+        let drawing = self.process_backend(|backend| {
+            material::process_material(|material| {
+                drawing::Drawing::new(
+                    backend,
+                    region,
+                    utils::builtin_shader::get_nearest_shader(material.get_renderer()),
+                )
+            })
         })?;
+
         if let Some(source) = source.as_ref() {
             drawing.set_source("source", source);
         }
@@ -315,7 +326,7 @@ impl Image {
         });
     }
 
-    fn execute_write_pixels(
+    pub(super) fn execute_write_pixels(
         &mut self,
         material_data: &mut material::MaterialData,
         material: &material::Material,
@@ -391,11 +402,15 @@ impl Image {
     }
 
     pub(super) fn execute_deallocate(&mut self) {
-        let Some(backend) = self.backend.take() else {
+        let Ok(mut data) = self.data.lock() else {
             return;
         };
 
-        if let Some(node) = self.node.take() {
+        let Some(backend) = data.backend.take() else {
+            return;
+        };
+
+        if let Some(node) = data.node.take() {
             let region = if let Ok(node) = node.lock() {
                 node.get_region()
             } else {
@@ -423,8 +438,7 @@ impl Image {
         destination.width = self.width;
         destination.height = self.height;
         destination.image_type = self.image_type;
-        destination.node = self.node;
-        destination.backend = self.backend;
+        destination.data = self.data;
     }
 
     fn isolate_from_source_atlas(
@@ -437,9 +451,15 @@ impl Image {
             return (false, None);
         };
 
-        if self.node.is_none() {
-            return (true, None);
+        {
+            let Ok(data) = self.data.lock() else {
+                return (false, None);
+            };
+            if data.node.is_none() {
+                return (true, None);
+            }
         }
+
         if source
             .as_ref()
             .and_then(|source| source.get_atlas_id())
@@ -478,7 +498,10 @@ impl Image {
     }
 
     pub(crate) fn get_atlas_region(&self) -> utils::Rectangle {
-        Self::atlas_region_width_padding(self.width, self.height, self.image_type, &self.node)
+        let Ok(data) = self.data.lock() else {
+            return utils::Rectangle::new(0, 0, 0, 0);
+        };
+        Self::atlas_region_width_padding(self.width, self.height, self.image_type, &data.node)
     }
 
     fn allocate(
@@ -489,7 +512,10 @@ impl Image {
         as_source: bool,
     ) {
         if matches!(self.image_type, ImageType::Screen) {
-            self.backend = backend::Backend::new(
+            let Ok(mut data) = self.data.lock() else {
+                return;
+            };
+            data.backend = backend::Backend::new(
                 material_data,
                 material,
                 self.width,
@@ -509,7 +535,10 @@ impl Image {
             if width > max_size || height > max_size {
                 return;
             }
-            self.backend = backend::Backend::new(
+            let Ok(mut data) = self.data.lock() else {
+                return;
+            };
+            data.backend = backend::Backend::new(
                 material_data,
                 material,
                 self.width,
@@ -541,8 +570,11 @@ impl Image {
             };
 
 
-            self.backend.replace(backend.clone());
-            self.node.replace(node);
+            let Ok(mut data) = self.data.lock() else {
+                return false;
+            };
+            data.backend.replace(backend.clone());
+            data.node.replace(node);
             finded = true;
             false // break for_each atlas
         });
@@ -574,8 +606,11 @@ impl Image {
         if let Some(backend) =
             backend::Backend::new(material_data, material, w, h, as_source, false)
         {
-            self.node = backend.alloc_node(material.get_renderer(), width, height, |_| true);
-            self.backend = Some(backend);
+            let Ok(mut data) = self.data.lock() else {
+                return;
+            };
+            data.node = backend.alloc_node(material.get_renderer(), width, height, |_| true);
+            data.backend = Some(backend);
         }
     }
 

@@ -34,8 +34,8 @@ pub(crate) fn init_material(
 }
 
 pub(crate) fn begin_frame() {
-    process_material(|material| {
-        material.begin_frame();
+    process_material_data(|data, material| {
+        material.begin_frame(data, material);
 
         Option::<()>::None
     });
@@ -144,14 +144,16 @@ impl Material {
         }
     }
 
-    pub(crate) fn begin_frame(&self) {
-        let Ok(mut data) = self.data.lock() else {
-            return;
-        };
-
+    pub(crate) fn begin_frame(&self, data: &mut MaterialData, material: &Material) {
         data.inframe = true;
         while let Some(delay) = data.delay.pop_front() {
-            // TODO
+            match delay {
+                delay::DelayCommand::Draw(drawing) => drawing.draw(),
+                delay::DelayCommand::Deallocate(mut image) => image.execute_deallocate(),
+                delay::DelayCommand::WritePixels((mut image, pixels, region)) => {
+                    image.execute_write_pixels(data, material, pixels, region)
+                }
+            }
         }
     }
 

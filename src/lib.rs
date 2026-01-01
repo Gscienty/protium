@@ -1,4 +1,9 @@
 mod atlas;
+mod color_scale;
+mod colorm;
+mod draw_option;
+mod geom;
+mod image;
 mod renderer;
 mod ui;
 mod utils;
@@ -24,11 +29,16 @@ extern "C" {
 pub fn test_draw(canvas: &web_sys::HtmlCanvasElement) {
     atlas::init_material(canvas, renderer::ColorSpace::Default, 80);
 
-    let mut screen = ui::Image::new(800, 600, atlas::ImageType::Screen);
+    let screen = image::Image::new(800, 600, atlas::ImageType::Screen);
+    let someone = image::Image::new(300, 300, atlas::ImageType::Regular);
 
     atlas::begin_frame();
+    someone.fill((1., 1., 0., 1.));
 
-    screen.fill(utils::Rectangle::new(100, 300, 300, 300), (1., 0., 1., 1.));
+    let sub_screen = screen
+        .sub(utils::Rectangle::new(300, 300, 300, 300))
+        .unwrap();
+    sub_screen.draw_image(&someone, draw_option::DrawOption::default());
 
     atlas::end_frame();
     atlas::flush(true);

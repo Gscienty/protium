@@ -6,6 +6,7 @@ use crate::utils;
 
 use super::{ImageID, ShaderID, command, driver};
 
+#[derive(Debug)]
 struct DrawingData {
     destination: ImageID,
     sources: Vec<command::DrawTriangleSourceArg>,
@@ -18,6 +19,7 @@ struct DrawingData {
     fill_rule: driver::FillRule,
 }
 
+#[derive(Debug)]
 pub(crate) struct Drawing {
     data: cell::RefCell<DrawingData>,
     sender: mpsc::UnboundedSender<command::Command>,
