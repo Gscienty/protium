@@ -58,7 +58,7 @@ impl Backend {
                         region,
                         utils::builtin_shader::get_clear_shader(material.get_renderer()),
                     )
-                    .append_vertices({
+                    .append_vertexes({
                         let min_x = region.min.x as f32;
                         let min_y = region.min.y as f32;
                         let max_x = region.max.x as f32;
@@ -173,7 +173,7 @@ impl BackendData {
                 utils::Rectangle::new(0, 0, page_width, page_height),
                 utils::builtin_shader::get_clear_shader(renderer),
             )
-            .append_vertices({
+            .append_vertexes({
                 let width = page_width as f32;
                 let height = page_height as f32;
                 vec![0., 0., width, 0., 0., height, width, height]
@@ -195,7 +195,7 @@ impl BackendData {
                 utils::builtin_shader::get_nearest_shader(renderer),
             )
             .set_source("source", self.image.get_id())
-            .append_vertices({
+            .append_vertexes({
                 let width = origin_image_width as f32;
                 let height = origin_image_height as f32;
                 vec![

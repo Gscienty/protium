@@ -48,7 +48,7 @@ impl Drawing {
         }
     }
 
-    pub(crate) fn append_vertices(&self, vertices: Vec<u8>) -> &Self {
+    pub(crate) fn append_vertexes(&self, vertices: Vec<u8>) -> &Self {
         let mut data = self.data.borrow_mut();
         data.vertices.extend(vertices);
 

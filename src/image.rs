@@ -20,7 +20,7 @@ impl Image {
         }
     }
 
-    pub fn draw_image(&self, source: &Self, option: draw_option::DrawOption) {
+    pub fn draw(&self, source: &Self, option: draw_option::DrawOption) {
         let blend = option.blend;
         let mut geom = option.geom;
         let (offset_x, offset_y) = self.adjust_position(0, 0);
@@ -52,14 +52,12 @@ impl Image {
             return;
         };
         drawing.set_fill_rule(option.fill_rule);
-        drawing.process_variable(|mut variable| {
-            variable.material(atlas::AtlasDrawingMaterialEntity::new(
-                utils::Rectangle::new_pos(sx0, sy0, sx1, sy1),
-                (geom.a, geom.b, geom.c, geom.d),
-                (geom.tx, geom.ty),
-                (cr, cg, cb, ca),
-            ));
-        });
+        drawing.material(atlas::AtlasDrawingMaterialEntity::new(
+            utils::Rectangle::new_pos(sx0, sy0, sx1, sy1),
+            (geom.a, geom.b, geom.c, geom.d),
+            (geom.tx, geom.ty),
+            (cr, cg, cb, ca),
+        ));
         drawing.draw();
     }
 
@@ -121,6 +119,10 @@ impl Image {
         if let Some(image) = image.as_mut() {
             image.write_pixels(pixels, region);
         }
+    }
+
+    pub(super) fn get_ui_image(&self) -> sync::Arc<sync::Mutex<Option<ui::Image>>> {
+        self.image.clone()
     }
 
     const fn adjust_position(&self, mut x: i32, mut y: i32) -> (i32, i32) {

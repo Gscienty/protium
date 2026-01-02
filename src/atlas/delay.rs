@@ -1,10 +1,10 @@
-use crate::{renderer, utils};
+use crate::utils;
 
-use super::image;
+use super::{drawing, image};
 
 #[derive(Debug)]
 pub(super) enum DelayCommand {
-    Draw(renderer::Drawing),
+    Draw(drawing::Drawing),
     Deallocate(image::Image),
     WritePixels((image::Image, Vec<u8>, utils::Rectangle)),
 }

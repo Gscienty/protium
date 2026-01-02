@@ -1,5 +1,5 @@
 #[derive(Default, Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) struct Point {
+pub struct Point {
     pub(crate) x: i32,
     pub(crate) y: i32,
 }

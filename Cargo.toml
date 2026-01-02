@@ -7,7 +7,7 @@ edition = "2024"
 crate-type = ["cdylib", "rlib"]
 
 [dependencies]
-tokio = { version = "1.43.0", features = ["sync", "rt"] }
+tokio = { version = "1.43.0", features = ["sync", "rt", "time"] }
 tokio_with_wasm = { version = "0.8.2", features = [
   "rt",
   "rt-multi-thread",
@@ -51,3 +51,8 @@ web-sys = { version = "0.3.77", features = [
   "MouseEvent",
 ] }
 lazy_static = "1.5.0"
+chrono = "0.4.42"
+enum-flags = "0.4.0"
+strum = { version = "0.27.2", features = ["derive"] }
+fontdue = "0.9.3"
+reqwest-wasm = "0.11.16"

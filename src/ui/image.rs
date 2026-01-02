@@ -22,6 +22,14 @@ impl Image {
         }
     }
 
+    pub(crate) fn set_modify_callback(&mut self, cb: Option<Box<dyn Fn()>>) {
+        self.modify_callback = cb;
+    }
+
+    pub(crate) fn get_size(&self) -> (i32, i32) {
+        self.image.get_size()
+    }
+
     pub(crate) fn draw(
         &mut self,
         region: utils::Rectangle,
@@ -38,14 +46,13 @@ impl Image {
         source: Option<&'_ Image>,
         blend: renderer::Blend,
     ) -> Option<drawing::Drawing> {
-        let drawing = self.image.draw(region, source.map(|image| &image.image))?;
+        let mut drawing = self.image.draw(region, source.map(|image| &image.image))?;
         drawing.set_blend(blend);
         Some(drawing::Drawing::new(drawing, self.modify_callback.take()))
     }
 
     pub(crate) fn clear(&mut self) {
-        let (width, height) = self.image.get_size();
-
+        let (width, height) = self.get_size();
         self.fill(utils::Rectangle::new(0, 0, width, height), (0., 0., 0., 0.));
     }
 
@@ -58,30 +65,27 @@ impl Image {
             cb();
         }
 
-        let Some(drawing) = self.image.draw(destination_region, Some(get_white_image())) else {
+        let Some(mut drawing) = self.image.draw(destination_region, Some(get_white_image())) else {
             return;
         };
-        drawing.process_variable(|mut variable| {
-            variable.quad(atlas::AtlasDrawingQuatEntity::new(
-                utils::Rectangle::new(
-                    0,
-                    0,
-                    destination_region.get_width(),
-                    destination_region.get_height(),
-                ),
-                utils::Rectangle::new_pos(1, 1, 2, 2),
-                [rgba; 4],
-            ));
-        });
-        drawing
-            .set_blend(
-                if rgba.3 == 1. && matches!(self.last_blend, renderer::BLEND_SOURCE_OVER) {
-                    renderer::BLEND_SOURCE_OVER
-                } else {
-                    renderer::BLEND_COPY
-                },
-            )
-            .set_fill_rule(renderer::FillRule::FillAll);
+        drawing.quad(atlas::AtlasDrawingQuatEntity::new(
+            utils::Rectangle::new(
+                0,
+                0,
+                destination_region.get_width(),
+                destination_region.get_height(),
+            ),
+            utils::Rectangle::new_pos(1, 1, 2, 2),
+            [rgba; 4],
+        ));
+        drawing.set_blend(
+            if rgba.3 == 1. && matches!(self.last_blend, renderer::BLEND_SOURCE_OVER) {
+                renderer::BLEND_SOURCE_OVER
+            } else {
+                renderer::BLEND_COPY
+            },
+        );
+        drawing.set_fill_rule(renderer::FillRule::FillAll);
         drawing.draw();
     }
 
@@ -94,10 +98,6 @@ impl Image {
             cb();
         }
         self.image.write_pixels(pixels, region);
-    }
-
-    pub(super) fn get_image_mut(&mut self) -> &mut atlas::Image {
-        &mut self.image
     }
 }
 

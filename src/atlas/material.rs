@@ -113,14 +113,6 @@ impl Material {
         self.min_destination_size
     }
 
-    pub(super) fn add_atlas(&self, id: renderer::ImageID, backend: backend::Backend) {
-        let Ok(mut data) = self.data.lock() else {
-            return;
-        };
-
-        data.atlas_set.insert(id, backend);
-    }
-
     pub(super) fn del_atlas(&self, id: renderer::ImageID) {
         let Ok(mut data) = self.data.lock() else {
             return;
@@ -129,29 +121,14 @@ impl Material {
         data.atlas_set.remove(&id);
     }
 
-    pub(super) fn for_each_atlas<F>(&self, mut cb: F)
-    where
-        F: FnMut(&MaterialData, &backend::Backend) -> bool,
-    {
-        let Ok(data) = self.data.lock() else {
-            return;
-        };
-
-        for atlas in data.atlas_set.values() {
-            if !cb(&data, atlas) {
-                break;
-            }
-        }
-    }
-
-    pub(crate) fn begin_frame(&self, data: &mut MaterialData, material: &Material) {
-        data.inframe = true;
-        while let Some(delay) = data.delay.pop_front() {
+    pub(crate) fn begin_frame(&self, material_data: &mut MaterialData, material: &Material) {
+        material_data.inframe = true;
+        while let Some(delay) = material_data.delay.pop_front() {
             match delay {
-                delay::DelayCommand::Draw(drawing) => drawing.draw(),
+                delay::DelayCommand::Draw(drawing) => drawing.execute_draw(material_data, material),
                 delay::DelayCommand::Deallocate(mut image) => image.execute_deallocate(),
                 delay::DelayCommand::WritePixels((mut image, pixels, region)) => {
-                    image.execute_write_pixels(data, material, pixels, region)
+                    image.execute_write_pixels(material_data, material, pixels, region)
                 }
             }
         }
@@ -174,11 +151,15 @@ impl Material {
         let Ok(mut data) = self.data.lock() else {
             return;
         };
-        data.inframe_source.insert(id);
+        data.add_inframe_source(id);
     }
 }
 
 impl MaterialData {
+    pub(super) fn add_inframe_source(&mut self, id: renderer::ImageID) {
+        self.inframe_source.insert(id);
+    }
+
     pub(super) fn is_in_frame(&self, id: renderer::ImageID) -> bool {
         self.inframe_source.contains(&id)
     }

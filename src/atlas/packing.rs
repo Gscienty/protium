@@ -360,16 +360,16 @@ impl Page {
         (self.width, self.height)
     }
 
-    pub(crate) fn is_empty(&self) -> bool {
-        let Some(root) = self.root.as_ref() else {
-            return true;
-        };
-        let Ok(root) = root.lock() else {
-            return true;
-        };
-
-        !root.value.used && root.child_0.is_none() && root.child_1.is_none()
-    }
+    // pub(crate) fn is_empty(&self) -> bool {
+    //     let Some(root) = self.root.as_ref() else {
+    //         return true;
+    //     };
+    //     let Ok(root) = root.lock() else {
+    //         return true;
+    //     };
+    //
+    //     !root.value.used && root.child_0.is_none() && root.child_1.is_none()
+    // }
 
     pub(crate) fn alloc(&mut self, width: i32, height: i32) -> Tree<PackingData> {
         if self.root.is_none() {
