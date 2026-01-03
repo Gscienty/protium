@@ -20,6 +20,10 @@ impl Image {
         }
     }
 
+    pub const fn get_size(&self) -> (i32, i32) {
+        (self.bound.get_width(), self.bound.get_height())
+    }
+
     pub fn draw(&self, source: &Self, option: draw_option::DrawOption) {
         let blend = option.blend;
         let mut geom = option.geom;
