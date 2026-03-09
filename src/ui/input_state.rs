@@ -399,7 +399,7 @@ impl InputStateReceiver {
             },
             mouse_button_pressed: if let Ok(mouse_button_pressed) = self.mouse_button_pressed.lock()
             {
-                mouse_button_pressed.clone()
+                *mouse_button_pressed
             } else {
                 Default::default()
             },

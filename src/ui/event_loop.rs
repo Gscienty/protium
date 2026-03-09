@@ -173,10 +173,10 @@ where
             return false;
         }
 
-        if let Ok(mut screen) = ctx.screen.lock() {
-            if let Some(screen) = screen.as_mut() {
-                screen.clear();
-            }
+        if let Ok(mut screen) = ctx.screen.lock()
+            && let Some(screen) = screen.as_mut()
+        {
+            screen.clear();
         }
 
         let (scale, offset_x, offset_y) = ctx.screen_scale_and_offsets();
@@ -247,14 +247,14 @@ where
 
         let modified = ctx.offscreen_modified.clone();
 
-        if let Ok(mut offscreen) = offscreen.lock() {
-            if let Some(offscreen) = offscreen.as_mut() {
-                offscreen.set_modify_callback(Some(Box::new(move || {
-                    if let Ok(mut modified) = modified.lock() {
-                        *modified = true;
-                    }
-                })));
-            }
+        if let Ok(mut offscreen) = offscreen.lock()
+            && let Some(offscreen) = offscreen.as_mut()
+        {
+            offscreen.set_modify_callback(Some(Box::new(move || {
+                if let Ok(mut modified) = modified.lock() {
+                    *modified = true;
+                }
+            })));
         };
 
         offscreen
