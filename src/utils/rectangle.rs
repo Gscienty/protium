@@ -5,12 +5,22 @@ pub struct Point {
 }
 
 impl Point {
-    pub(crate) const fn new(x: i32, y: i32) -> Self {
+    pub const fn new(x: i32, y: i32) -> Self {
         Self { x, y }
     }
 
-    pub(crate) const fn in_region(&self, r: Rectangle) -> bool {
+    pub const fn in_region(&self, r: Rectangle) -> bool {
         r.min.x <= self.x && self.x < r.max.x && r.min.y <= self.y && self.y < r.max.y
+    }
+
+    #[inline(always)]
+    pub const fn get_x(&self) -> i32 {
+        self.x
+    }
+
+    #[inline(always)]
+    pub const fn get_y(&self) -> i32 {
+        self.y
     }
 }
 
@@ -46,11 +56,26 @@ impl Rectangle {
         self.max.y - self.min.y
     }
 
-    pub(crate) const fn is_empty(&self) -> bool {
+    #[inline(always)]
+    pub const fn get_size(&self) -> (i32, i32) {
+        (self.get_width(), self.get_height())
+    }
+
+    #[inline(always)]
+    pub const fn get_min(&self) -> Point {
+        self.min
+    }
+
+    #[inline(always)]
+    pub const fn get_max(&self) -> Point {
+        self.max
+    }
+
+    pub const fn is_empty(&self) -> bool {
         self.min.x >= self.max.x || self.min.y >= self.max.y
     }
 
-    pub(crate) const fn is_in(&self, other: &Self) -> bool {
+    pub const fn is_in(&self, other: &Self) -> bool {
         if self.is_empty() {
             true
         } else {
@@ -65,7 +90,7 @@ impl Rectangle {
         self.min.x <= x && x <= self.max.x && self.min.y <= y && y <= self.max.y
     }
 
-    pub(crate) const fn add(&self, p: Point) -> Self {
+    pub const fn add(&self, p: Point) -> Self {
         Self {
             min: Point {
                 x: self.min.x + p.x,
@@ -78,7 +103,7 @@ impl Rectangle {
         }
     }
 
-    pub(crate) const fn sub(&self, p: Point) -> Self {
+    pub const fn sub(&self, p: Point) -> Self {
         Self {
             min: Point {
                 x: self.min.x - p.x,
@@ -91,7 +116,7 @@ impl Rectangle {
         }
     }
 
-    pub(crate) const fn intersect(mut self, s: Self) -> Self {
+    pub const fn intersect(mut self, s: Self) -> Self {
         if self.min.x < s.min.x {
             self.min.x = s.min.x;
         }
@@ -111,7 +136,7 @@ impl Rectangle {
         }
     }
 
-    pub(crate) const fn union(mut self, s: Self) -> Self {
+    pub const fn union(mut self, s: Self) -> Self {
         if self.is_empty() {
             return s;
         }
