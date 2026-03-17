@@ -23,7 +23,7 @@ pub use renderer::{
     BLEND_CLEAR, BLEND_COPY, BLEND_DEFAULT, BLEND_SOURCE_OVER, ColorSpace, FillRule,
 };
 pub use run::{init, run_game};
-pub use ui::InputState;
+pub use ui::{InputState, Key, MouseButton};
 
 extern crate console_error_panic_hook;
 use std::panic;
