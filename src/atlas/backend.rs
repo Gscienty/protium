@@ -25,6 +25,9 @@ impl Backend {
         screen: bool,
     ) -> Option<Self> {
         let image = material.get_renderer().create_image(width, height, screen);
+
+        // TODO: clear
+
         let id = image.get_id();
         let backend = Self(sync::Arc::new(sync::Mutex::new(BackendData {
             page: packing::Page::new(
@@ -119,6 +122,14 @@ impl Backend {
         };
 
         data.get_image().get_internal_size()
+    }
+
+    pub(super) fn get_image_size(&self) -> (i32, i32) {
+        let Ok(data) = self.0.lock() else {
+            return (0, 0);
+        };
+
+        data.get_image().get_size()
     }
 
     pub(super) fn alloc_node<F>(

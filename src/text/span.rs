@@ -1,5 +1,5 @@
 use crate::{Image, ImageType, utils};
-use std::{ptr, sync};
+use std::{ptr, slice, sync};
 
 pub struct Span {
     font: sync::Arc<fontdue::Font>,
@@ -10,13 +10,13 @@ impl Span {
     pub(super) fn new(font: sync::Arc<fontdue::Font>) -> Self {
         Self {
             font,
-            layout: fontdue::layout::Layout::new(fontdue::layout::CoordinateSystem::PositiveYUp),
+            layout: fontdue::layout::Layout::new(fontdue::layout::CoordinateSystem::PositiveYDown),
         }
     }
 
     pub fn append(&mut self, text: &str, px: f32, rgba: (f32, f32, f32, f32)) {
         self.layout.append(
-            &[self.font.clone()],
+            slice::from_ref(&self.font),
             &fontdue::layout::TextStyle::with_user_data(text, px, 0, rgba),
         );
     }

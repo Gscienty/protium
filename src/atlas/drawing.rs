@@ -247,7 +247,7 @@ impl Drawing {
 
         let Some((source_image, source_size)) = source_image.process_backend(|backend| {
             let image = backend.get_atlas_id()?;
-            Some((image, backend.get_image_internal_size()))
+            Some((image, backend.get_image_size()))
         }) else {
             return;
         };
