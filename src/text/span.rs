@@ -10,7 +10,7 @@ impl Span {
     pub(super) fn new(font: sync::Arc<fontdue::Font>) -> Self {
         Self {
             font,
-            layout: fontdue::layout::Layout::new(fontdue::layout::CoordinateSystem::PositiveYDown),
+            layout: fontdue::layout::Layout::new(fontdue::layout::CoordinateSystem::PositiveYUp),
         }
     }
 

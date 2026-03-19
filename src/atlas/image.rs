@@ -290,6 +290,7 @@ impl Image {
                 self.height,
                 false,
                 true,
+                true,
             );
             return;
         }
@@ -313,6 +314,7 @@ impl Image {
                 self.height,
                 as_source && matches!(self.image_type, ImageType::Regular),
                 false,
+                true,
             );
             return;
         }
@@ -372,7 +374,7 @@ impl Image {
         }
         // regular, a part of material, but create new material
         if let Some(backend) =
-            backend::Backend::new(material_data, material, w, h, as_source, false)
+            backend::Backend::new(material_data, material, w, h, as_source, false, false)
         {
             let Ok(mut data) = self.data.lock() else {
                 return;

@@ -23,10 +23,32 @@ impl Backend {
         height: i32,
         source: bool,
         screen: bool,
+        need_clear: bool,
     ) -> Option<Self> {
         let image = material.get_renderer().create_image(width, height, screen);
 
-        // TODO: clear
+        if need_clear {
+            image
+                .drawing(
+                    utils::Rectangle::new(0, 0, width, height),
+                    utils::builtin_shader::get_clear_shader(material.get_renderer()),
+                )
+                .append_vertexes({
+                    let width = width as f32;
+                    let height = height as f32;
+                    vec![0., 0., width, 0., 0., height, width, height]
+                        .into_iter()
+                        .flat_map(|v| v.to_ne_bytes())
+                        .collect()
+                })
+                .append_indexes(vec![0, 1, 2, 1, 2, 3])
+                .set_blend(renderer::BLEND_CLEAR)
+                .set_fill_rule(renderer::FillRule::FillAll)
+                .set_uniforms(utils::builtin_shader::get_clear_uniform(
+                    image.get_internal_size(),
+                ))
+                .draw();
+        }
 
         let id = image.get_id();
         let backend = Self(sync::Arc::new(sync::Mutex::new(BackendData {
