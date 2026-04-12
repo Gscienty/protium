@@ -48,7 +48,13 @@ impl Image {
     ) -> Option<drawing::Drawing> {
         let mut drawing = self.image.draw(region, source.map(|image| &image.image))?;
         drawing.set_blend(blend);
-        Some(drawing::Drawing::new(drawing, self.modify_callback.take()))
+        if let Some(cb) = self.modify_callback.as_ref() {
+            cb();
+        }
+        Some(drawing::Drawing::new(
+            drawing,
+            //self.modify_callback.take(),
+        ))
     }
 
     pub(crate) fn clear(&mut self) {
@@ -68,7 +74,7 @@ impl Image {
         let Some(mut drawing) = self.image.draw(destination_region, Some(get_white_image())) else {
             return;
         };
-        drawing.quad(atlas::AtlasDrawingQuatEntity::new(
+        drawing.dst_src(atlas::AtlasDrawingQuadDstSrc::new(
             utils::Rectangle::new(
                 0,
                 0,

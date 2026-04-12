@@ -2,14 +2,17 @@ use crate::{atlas, renderer};
 
 pub(crate) struct Drawing {
     drawing: atlas::Drawing,
-    modify_callback: Option<Box<dyn Fn()>>,
+    //modify_callback: Option<Box<dyn Fn()>>,
 }
 
 impl Drawing {
-    pub(super) fn new(drawing: atlas::Drawing, modify_callback: Option<Box<dyn Fn()>>) -> Self {
+    pub(super) fn new(
+        drawing: atlas::Drawing,
+        //modify_callback: Option<Box<dyn Fn()>>,
+    ) -> Self {
         Self {
             drawing,
-            modify_callback,
+            //modify_callback,
         }
     }
 
@@ -21,14 +24,14 @@ impl Drawing {
     //     self.drawing.quad(quad);
     // }
 
-    pub(crate) fn material(&mut self, material: atlas::AtlasDrawingMaterialEntity) {
-        self.drawing.material(material);
+    pub(crate) fn quad_src_material(&mut self, material: atlas::AtlasDrawingQuadSrcMaterial) {
+        self.drawing.src_material(material);
     }
 
     pub(crate) fn draw(self) {
-        if let Some(cb) = self.modify_callback.as_ref() {
-            cb();
-        }
+        // if let Some(cb) = self.modify_callback.as_ref() {
+        //     cb();
+        // }
 
         self.drawing.draw();
     }

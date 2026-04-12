@@ -56,7 +56,7 @@ impl Image {
             return;
         };
         drawing.set_fill_rule(option.fill_rule);
-        drawing.material(atlas::AtlasDrawingMaterialEntity::new(
+        drawing.quad_src_material(atlas::AtlasDrawingQuadSrcMaterial::new(
             utils::Rectangle::new_pos(sx0, sy0, sx1, sy1),
             (geom.a, geom.b, geom.c, geom.d),
             (geom.tx, geom.ty),

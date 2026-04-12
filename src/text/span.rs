@@ -10,7 +10,7 @@ impl Span {
     pub(super) fn new(font: sync::Arc<fontdue::Font>) -> Self {
         Self {
             font,
-            layout: fontdue::layout::Layout::new(fontdue::layout::CoordinateSystem::PositiveYUp),
+            layout: fontdue::layout::Layout::new(fontdue::layout::CoordinateSystem::PositiveYDown),
         }
     }
 
@@ -49,20 +49,20 @@ impl Span {
         let span_img = Image::new(width, height, ImageType::Regular);
 
         for glyph in self.layout.glyphs().iter() {
-            let (metrics, mut data) = self
+            let (_, data) = self
                 .font
                 .rasterize_indexed(glyph.key.glyph_index, glyph.key.px);
 
-            for row in 0..metrics.height / 2 {
-                unsafe {
-                    ptr::swap_nonoverlapping(
-                        data.as_mut_ptr().add(metrics.width * row),
-                        data.as_mut_ptr()
-                            .add(metrics.width * (metrics.height - row - 1)),
-                        metrics.width,
-                    );
-                }
-            }
+            // for row in 0..metrics.height / 2 {
+            //     unsafe {
+            //         ptr::swap_nonoverlapping(
+            //             data.as_mut_ptr().add(metrics.width * row),
+            //             data.as_mut_ptr()
+            //                 .add(metrics.width * (metrics.height - row - 1)),
+            //             metrics.width,
+            //         );
+            //     }
+            // }
             if let Some(block) = span_img.sub(utils::Rectangle::new(
                 glyph.x as i32,
                 0,

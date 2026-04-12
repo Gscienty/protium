@@ -248,7 +248,7 @@ impl Image {
         // let source_region = utils::Rectangle::new(0, 0, self.width, self.height);
 
         if let Some(mut drawing) = new_image.draw(destination_region, Some(self)) {
-            drawing.quad(drawing::AtlasDrawingQuatEntity::new(
+            drawing.dst_src(drawing::AtlasDrawingQuadDstSrc::new(
                 utils::Rectangle::new(0, 0, self.width, self.height),
                 utils::Rectangle::new(0, 0, self.width, self.height),
                 [(1., 1., 1., 1.); 4],

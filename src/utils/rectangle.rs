@@ -62,8 +62,23 @@ impl Rectangle {
     }
 
     #[inline(always)]
+    pub const fn get_x(&self) -> i32 {
+        self.min.get_x()
+    }
+
+    #[inline(always)]
+    pub const fn get_y(&self) -> i32 {
+        self.min.get_y()
+    }
+
+    #[inline(always)]
     pub const fn get_min(&self) -> Point {
         self.min
+    }
+
+    #[inline(always)]
+    pub const fn get_pos(&self) -> (i32, i32) {
+        (self.get_x(), self.get_y())
     }
 
     #[inline(always)]

@@ -3,14 +3,14 @@ use crate::{renderer, utils};
 use super::{delay, image, material};
 
 #[derive(Debug)]
-pub(crate) struct AtlasDrawingQuatEntity {
+pub(crate) struct AtlasDrawingQuadDstSrc {
     destination: utils::Rectangle,
     source: utils::Rectangle,
 
     color: [(f32, f32, f32, f32); 4],
 }
 
-impl AtlasDrawingQuatEntity {
+impl AtlasDrawingQuadDstSrc {
     pub(crate) fn new(
         destination: utils::Rectangle,
         source: utils::Rectangle,
@@ -33,18 +33,18 @@ impl AtlasDrawingQuatEntity {
             self.color[0].1,
             self.color[0].2,
             self.color[0].3,
-            (self.destination.min.x + destination_offset.x) as f32,
-            (self.destination.max.y + destination_offset.y) as f32,
-            (self.source.min.x + source_offset.x) as f32,
-            (self.source.max.y + source_offset.y) as f32,
-            self.color[1].0,
-            self.color[1].1,
-            self.color[1].2,
-            self.color[1].3,
             (self.destination.max.x + destination_offset.x) as f32,
             (self.destination.min.y + destination_offset.y) as f32,
             (self.source.max.x + source_offset.x) as f32,
             (self.source.min.y + source_offset.y) as f32,
+            self.color[1].0,
+            self.color[1].1,
+            self.color[1].2,
+            self.color[1].3,
+            (self.destination.min.x + destination_offset.x) as f32,
+            (self.destination.max.y + destination_offset.y) as f32,
+            (self.source.min.x + source_offset.x) as f32,
+            (self.source.max.y + source_offset.y) as f32,
             self.color[2].0,
             self.color[2].1,
             self.color[2].2,
@@ -65,14 +65,14 @@ impl AtlasDrawingQuatEntity {
 }
 
 #[derive(Debug)]
-pub(crate) struct AtlasDrawingMaterialEntity {
+pub(crate) struct AtlasDrawingQuadSrcMaterial {
     source_region: utils::Rectangle,
     arg: (f32, f32, f32, f32),
     t: (f32, f32),
     color: (f32, f32, f32, f32),
 }
 
-impl AtlasDrawingMaterialEntity {
+impl AtlasDrawingQuadSrcMaterial {
     pub(crate) fn new(
         source_region: utils::Rectangle,
         arg: (f32, f32, f32, f32),
@@ -159,8 +159,8 @@ impl AtlasDrawingMaterialEntity {
 
 #[derive(Debug)]
 enum VertexEntity {
-    Quad(AtlasDrawingQuatEntity),
-    Material(AtlasDrawingMaterialEntity),
+    DstSrc(AtlasDrawingQuadDstSrc),
+    SrcMaterial(AtlasDrawingQuadSrcMaterial),
 }
 
 #[derive(Debug)]
@@ -195,12 +195,12 @@ impl Drawing {
         self.blend = blend;
     }
 
-    pub(crate) fn quad(&mut self, quad: AtlasDrawingQuatEntity) {
-        self.vertex_entity = Some(VertexEntity::Quad(quad));
+    pub(crate) fn dst_src(&mut self, quad: AtlasDrawingQuadDstSrc) {
+        self.vertex_entity = Some(VertexEntity::DstSrc(quad));
     }
 
-    pub(crate) fn material(&mut self, material: AtlasDrawingMaterialEntity) {
-        self.vertex_entity = Some(VertexEntity::Material(material));
+    pub(crate) fn src_material(&mut self, quad: AtlasDrawingQuadSrcMaterial) {
+        self.vertex_entity = Some(VertexEntity::SrcMaterial(quad));
     }
 
     pub(crate) fn set_fill_rule(&mut self, fill_rule: renderer::FillRule) {
@@ -247,7 +247,7 @@ impl Drawing {
 
         let Some((source_image, source_size)) = source_image.process_backend(|backend| {
             let image = backend.get_atlas_id()?;
-            Some((image, backend.get_image_size()))
+            Some((image, backend.get_image_internal_size()))
         }) else {
             return;
         };
@@ -258,12 +258,11 @@ impl Drawing {
 
         if let Some(vertex_entity) = self.vertex_entity {
             let vertexes = match vertex_entity {
-                VertexEntity::Quad(quad) => {
-                    quad.serialize(self.destination_atlas_region.min, source_atlas_region.min)
+                VertexEntity::DstSrc(dst_src) => {
+                    dst_src.serialize(self.destination_atlas_region.min, source_atlas_region.min)
                 }
-                VertexEntity::Material(material) => {
-                    material.serialize(self.destination_atlas_region.min, source_atlas_region.min)
-                }
+                VertexEntity::SrcMaterial(src_material) => src_material
+                    .serialize(self.destination_atlas_region.min, source_atlas_region.min),
             };
             drawing.append_vertexes(vertexes);
             drawing.append_indexes(vec![0, 1, 2, 1, 2, 3]);

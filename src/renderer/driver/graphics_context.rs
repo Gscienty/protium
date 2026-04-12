@@ -208,6 +208,7 @@ impl GraphicsContext {
             web_sys::WebGl2RenderingContext::CLAMP_TO_EDGE as i32,
         );
         hdr.pixel_store(web_sys::WebGl2RenderingContext::UNPACK_ALIGNMENT, 4);
+        // hdr.pixel_store(web_sys::WebGl2RenderingContext::UNPACK_FLIP_Y_WEBGL, 1);
 
         hdr.tex_image_2d(
             web_sys::WebGl2RenderingContext::TEXTURE_2D,
