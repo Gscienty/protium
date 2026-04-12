@@ -249,8 +249,8 @@ impl Image {
 
         if let Some(mut drawing) = new_image.draw(destination_region, Some(self)) {
             drawing.dst_src(drawing::AtlasDrawingQuadDstSrc::new(
-                utils::Rectangle::new(0, 0, self.width, self.height),
-                utils::Rectangle::new(0, 0, self.width, self.height),
+                (0., 0., self.width as f32, self.height as f32),
+                (0., 0., self.width as f32, self.height as f32),
                 [(1., 1., 1., 1.); 4],
             ));
             drawing.set_blend(renderer::BLEND_COPY);

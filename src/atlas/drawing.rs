@@ -4,55 +4,68 @@ use super::{delay, image, material};
 
 #[derive(Debug)]
 pub(crate) struct AtlasDrawingQuadDstSrc {
-    destination: utils::Rectangle,
-    source: utils::Rectangle,
+    dx0: f32,
+    dy0: f32,
+    dx1: f32,
+    dy1: f32,
+
+    sx0: f32,
+    sy0: f32,
+    sx1: f32,
+    sy1: f32,
 
     color: [(f32, f32, f32, f32); 4],
 }
 
 impl AtlasDrawingQuadDstSrc {
     pub(crate) fn new(
-        destination: utils::Rectangle,
-        source: utils::Rectangle,
+        destination: (f32, f32, f32, f32),
+        source: (f32, f32, f32, f32),
         color: [(f32, f32, f32, f32); 4],
     ) -> Self {
         Self {
-            destination,
-            source,
+            dx0: adjust(destination.0),
+            dy0: adjust(destination.1),
+            dx1: adjust(destination.2),
+            dy1: adjust(destination.3),
+            sx0: source.0,
+            sy0: source.1,
+            sx1: source.2,
+            sy1: source.3,
             color,
         }
     }
 
     fn serialize(&self, destination_offset: utils::Point, source_offset: utils::Point) -> Vec<u8> {
         [
-            (self.destination.min.x + destination_offset.x) as f32,
-            (self.destination.min.y + destination_offset.y) as f32,
-            (self.source.min.x + source_offset.x) as f32,
-            (self.source.min.y + source_offset.y) as f32,
+            self.dx0 + destination_offset.x as f32,
+            self.dy0 + destination_offset.y as f32,
+            self.sx0 + source_offset.x as f32,
+            self.sy0 + source_offset.y as f32,
             self.color[0].0,
             self.color[0].1,
             self.color[0].2,
             self.color[0].3,
-            (self.destination.max.x + destination_offset.x) as f32,
-            (self.destination.min.y + destination_offset.y) as f32,
-            (self.source.max.x + source_offset.x) as f32,
-            (self.source.min.y + source_offset.y) as f32,
+            self.dx1 + destination_offset.x as f32,
+            self.dy0 + destination_offset.y as f32,
+            self.sx1 + source_offset.x as f32,
+            self.sy0 + source_offset.y as f32,
             self.color[1].0,
             self.color[1].1,
             self.color[1].2,
             self.color[1].3,
-            (self.destination.min.x + destination_offset.x) as f32,
-            (self.destination.max.y + destination_offset.y) as f32,
-            (self.source.min.x + source_offset.x) as f32,
-            (self.source.max.y + source_offset.y) as f32,
+            self.dx0 + destination_offset.x as f32,
+            self.dy1 + destination_offset.y as f32,
+            self.sx0 + source_offset.x as f32,
+            self.sy1 + source_offset.y as f32,
             self.color[2].0,
             self.color[2].1,
             self.color[2].2,
             self.color[2].3,
-            (self.destination.max.x + destination_offset.x) as f32,
-            (self.destination.max.y + destination_offset.y) as f32,
-            (self.source.max.x + source_offset.x) as f32,
-            (self.source.max.y + source_offset.y) as f32,
+            self.dx1 + destination_offset.x as f32,
+            self.dy1 + destination_offset.y as f32,
+            self.sx1 + source_offset.x as f32,
+            self.sy1 + source_offset.y as f32,
             self.color[3].0,
             self.color[3].1,
             self.color[3].2,
@@ -66,7 +79,10 @@ impl AtlasDrawingQuadDstSrc {
 
 #[derive(Debug)]
 pub(crate) struct AtlasDrawingQuadSrcMaterial {
-    source_region: utils::Rectangle,
+    sx0: f32,
+    sy0: f32,
+    sx1: f32,
+    sy1: f32,
     arg: (f32, f32, f32, f32),
     t: (f32, f32),
     color: (f32, f32, f32, f32),
@@ -74,13 +90,16 @@ pub(crate) struct AtlasDrawingQuadSrcMaterial {
 
 impl AtlasDrawingQuadSrcMaterial {
     pub(crate) fn new(
-        source_region: utils::Rectangle,
+        source_region: (f32, f32, f32, f32),
         arg: (f32, f32, f32, f32),
         t: (f32, f32),
         color: (f32, f32, f32, f32),
     ) -> Self {
         Self {
-            source_region,
+            sx0: source_region.0,
+            sy0: source_region.1,
+            sx1: source_region.2,
+            sy1: source_region.3,
             arg,
             t,
             color,
@@ -88,44 +107,44 @@ impl AtlasDrawingQuadSrcMaterial {
     }
 
     fn serialize(&self, destination_offset: utils::Point, source_offset: utils::Point) -> Vec<u8> {
-        let x = (self.source_region.max.x - self.source_region.min.x) as f32;
-        let y = (self.source_region.max.y - self.source_region.min.y) as f32;
+        let x = self.sx1 - self.sx0;
+        let y = self.sy1 - self.sy0;
         let ax = self.arg.0 * x;
         let by = self.arg.1 * y;
         let cx = self.arg.2 * x;
         let dy = self.arg.3 * y;
-        let u0 = self.source_region.min.x as f32 + source_offset.x as f32;
-        let v0 = self.source_region.min.y as f32 + source_offset.y as f32;
-        let u1 = self.source_region.max.x as f32 + source_offset.x as f32;
-        let v1 = self.source_region.max.y as f32 + source_offset.y as f32;
+        let u0 = self.sx0 + source_offset.x as f32;
+        let v0 = self.sy0 + source_offset.y as f32;
+        let u1 = self.sx1 + source_offset.x as f32;
+        let v1 = self.sy1 + source_offset.y as f32;
 
         [
-            Self::adjust(self.t.0) + destination_offset.x as f32,
-            Self::adjust(self.t.1) + destination_offset.y as f32,
+            adjust(self.t.0) + destination_offset.x as f32,
+            adjust(self.t.1) + destination_offset.y as f32,
             u0,
             v0,
             self.color.0,
             self.color.1,
             self.color.2,
             self.color.3,
-            Self::adjust(ax + self.t.0) + destination_offset.x as f32,
-            Self::adjust(cx + self.t.1) + destination_offset.y as f32,
+            adjust(ax + self.t.0) + destination_offset.x as f32,
+            adjust(cx + self.t.1) + destination_offset.y as f32,
             u1,
             v0,
             self.color.0,
             self.color.1,
             self.color.2,
             self.color.3,
-            Self::adjust(by + self.t.0) + destination_offset.x as f32,
-            Self::adjust(dy + self.t.1) + destination_offset.y as f32,
+            adjust(by + self.t.0) + destination_offset.x as f32,
+            adjust(dy + self.t.1) + destination_offset.y as f32,
             u0,
             v1,
             self.color.0,
             self.color.1,
             self.color.2,
             self.color.3,
-            Self::adjust(ax + by + self.t.0) + destination_offset.x as f32,
-            Self::adjust(cx + dy + self.t.1) + destination_offset.y as f32,
+            adjust(ax + by + self.t.0) + destination_offset.x as f32,
+            adjust(cx + dy + self.t.1) + destination_offset.y as f32,
             u1,
             v1,
             self.color.0,
@@ -137,23 +156,23 @@ impl AtlasDrawingQuadSrcMaterial {
         .flat_map(|v| v.to_ne_bytes())
         .collect()
     }
+}
 
-    fn adjust(x: f32) -> f32 {
-        let mut x_int = (x as i32) as f32;
-        if x < 0. && x != x_int {
-            x_int -= 1.;
-        }
-        let frac = x - x_int;
+fn adjust(x: f32) -> f32 {
+    let mut x_int = (x as i32) as f32;
+    if x < 0. && x != x_int {
+        x_int -= 1.;
+    }
+    let frac = x - x_int;
 
-        if frac < (3. / 16.) {
-            x_int
-        } else if frac < (8. / 16.) {
-            x_int + (5. / 16.)
-        } else if frac < (13. / 16.) {
-            x_int + (11. / 16.)
-        } else {
-            x_int + 1.
-        }
+    if frac < (3. / 16.) {
+        x_int
+    } else if frac < (8. / 16.) {
+        x_int + (5. / 16.)
+    } else if frac < (13. / 16.) {
+        x_int + (11. / 16.)
+    } else {
+        x_int + 1.
     }
 }
 
@@ -247,7 +266,7 @@ impl Drawing {
 
         let Some((source_image, source_size)) = source_image.process_backend(|backend| {
             let image = backend.get_atlas_id()?;
-            Some((image, backend.get_image_internal_size()))
+            Some((image, backend.get_image_size()))
         }) else {
             return;
         };

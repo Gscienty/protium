@@ -75,13 +75,13 @@ impl Image {
             return;
         };
         drawing.dst_src(atlas::AtlasDrawingQuadDstSrc::new(
-            utils::Rectangle::new(
-                0,
-                0,
-                destination_region.get_width(),
-                destination_region.get_height(),
+            (
+                0.,
+                0.,
+                destination_region.get_width() as f32,
+                destination_region.get_height() as f32,
             ),
-            utils::Rectangle::new_pos(1, 1, 2, 2),
+            (1., 1., 2., 2.),
             [rgba; 4],
         ));
         drawing.set_blend(
