@@ -60,15 +60,18 @@ where
 
     fn draw_final_screen(&mut self, scale: f32, offset_x: f32, offset_y: f32) {
         let mut draw_opt = DrawOption::default();
-        draw_opt.set_geom(
-            GeoM::default()
-                .scale(scale, scale)
-                .translate(offset_x, offset_y),
-        );
 
         let Some(offscreen) = self.offscreen.as_ref() else {
             return;
         };
+        let (_, offscreen_height) = offscreen.get_size();
+        let mirrored_offset_y = offset_y + (offscreen_height as f32 * scale);
+
+        draw_opt.set_geom(
+            GeoM::default()
+                .scale(scale, -scale) // Y轴缩放为负值实现上下镜像
+                .translate(offset_x, mirrored_offset_y),
+        );
         if let Some(screen) = self.screen.as_mut() {
             screen.draw(offscreen, draw_opt);
         }

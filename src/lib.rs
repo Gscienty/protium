@@ -28,7 +28,7 @@ pub use ui::{InputState, Key, MouseButton};
 extern crate console_error_panic_hook;
 use std::panic;
 
-// use crate::text::FontSet;
+use crate::text::FontSet;
 
 // #[wasm_bindgen_futures::wasm_bindgen::prelude::wasm_bindgen]
 // pub async fn run(canvas: web_sys::HtmlCanvasElement) {
@@ -46,18 +46,14 @@ extern "C" {
 }
 
 // struct MockGame {
-//     font_set: FontSet,
+//     font_img: Image,
 // }
 //
 // impl Game for MockGame {
 //     fn draw(&mut self, screen: &Image) {
-//         let mut span = self.font_set.new_span("sans").unwrap();
-//         span.append("Hello World", 48., (0., 0., 0., 1.));
-//         let font_img = span.draw().unwrap();
-//
 //         let mut option = DrawOption::default();
-//         option.set_geom(GeoM::default().translate(0., 0.));
-//         screen.draw(&font_img, option);
+//         option.set_geom(GeoM::default().translate(400., 300.));
+//         screen.draw(&self.font_img, option);
 //     }
 //
 //     fn update(&mut self) {}
@@ -83,10 +79,10 @@ extern "C" {
 //     let ttf = resp.unwrap().bytes().await.unwrap();
 //     let mut font_set = text::FontSet::new();
 //     font_set.add_font("sans", &ttf);
-//     // let mut span = font_set.new_span("sans").unwrap();
-//     // span.append("A", 48., (0., 0., 0., 1.));
-//     //
-//     // let font_img = span.draw().unwrap();
+//     let mut span = font_set.new_span("sans").unwrap();
+//     span.append("A", 48., (0., 0., 0., 1.));
+//
+//     let font_img = span.draw().unwrap();
 //     // atlas::begin_frame();
 //     //
 //     // let screen = Image::new(800, 600, ImageType::Screen);
@@ -99,5 +95,5 @@ extern "C" {
 //     //
 //     // atlas::flush(true);
 //
-//     run_game(MockGame { font_set })
+//     run_game(MockGame { font_img })
 // }

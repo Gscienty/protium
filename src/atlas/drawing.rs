@@ -38,6 +38,7 @@ impl AtlasDrawingQuadDstSrc {
 
     fn serialize(&self, destination_offset: utils::Point, source_offset: utils::Point) -> Vec<u8> {
         [
+            //
             self.dx0 + destination_offset.x as f32,
             self.dy0 + destination_offset.y as f32,
             self.sx0 + source_offset.x as f32,
@@ -46,6 +47,7 @@ impl AtlasDrawingQuadDstSrc {
             self.color[0].1,
             self.color[0].2,
             self.color[0].3,
+            //
             self.dx1 + destination_offset.x as f32,
             self.dy0 + destination_offset.y as f32,
             self.sx1 + source_offset.x as f32,
@@ -54,6 +56,7 @@ impl AtlasDrawingQuadDstSrc {
             self.color[1].1,
             self.color[1].2,
             self.color[1].3,
+            //
             self.dx0 + destination_offset.x as f32,
             self.dy1 + destination_offset.y as f32,
             self.sx0 + source_offset.x as f32,
@@ -62,6 +65,7 @@ impl AtlasDrawingQuadDstSrc {
             self.color[2].1,
             self.color[2].2,
             self.color[2].3,
+            //
             self.dx1 + destination_offset.x as f32,
             self.dy1 + destination_offset.y as f32,
             self.sx1 + source_offset.x as f32,
@@ -119,6 +123,7 @@ impl AtlasDrawingQuadSrcMaterial {
         let v1 = self.sy1 + source_offset.y as f32;
 
         [
+            //
             adjust(self.t.0) + destination_offset.x as f32,
             adjust(self.t.1) + destination_offset.y as f32,
             u0,
@@ -127,6 +132,7 @@ impl AtlasDrawingQuadSrcMaterial {
             self.color.1,
             self.color.2,
             self.color.3,
+            //
             adjust(ax + self.t.0) + destination_offset.x as f32,
             adjust(cx + self.t.1) + destination_offset.y as f32,
             u1,
@@ -135,6 +141,7 @@ impl AtlasDrawingQuadSrcMaterial {
             self.color.1,
             self.color.2,
             self.color.3,
+            //
             adjust(by + self.t.0) + destination_offset.x as f32,
             adjust(dy + self.t.1) + destination_offset.y as f32,
             u0,
@@ -143,6 +150,7 @@ impl AtlasDrawingQuadSrcMaterial {
             self.color.1,
             self.color.2,
             self.color.3,
+            //
             adjust(ax + by + self.t.0) + destination_offset.x as f32,
             adjust(cx + dy + self.t.1) + destination_offset.y as f32,
             u1,
