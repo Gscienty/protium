@@ -4,7 +4,7 @@ use crate::{DrawOption, GeoM, Image, ImageType, InputState, ui};
 
 #[allow(async_fn_in_trait)]
 pub trait Game {
-    fn update(&mut self);
+    async fn update(&mut self);
 
     fn draw(&mut self, screen: &Image);
 
@@ -47,8 +47,8 @@ impl<G> ui::Game for ImplUIGame<G>
 where
     G: Game,
 {
-    fn update(&mut self) {
-        self.game.update();
+    async fn update(&mut self) {
+        self.game.update().await;
     }
 
     fn draw_offscreen(&mut self) {

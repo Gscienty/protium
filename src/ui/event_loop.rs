@@ -100,11 +100,11 @@ where
     async fn update(&self) {
         let (frames, actual_fps) = self.clock.update_frame();
 
-        let need_flush_buffer = if let Ok(mut ctx) = self.context.lock() {
+        let need_flush_buffer = if let Ok(mut ctx) = self.context.try_lock() {
             ctx.game.set_actual_fps(actual_fps);
 
             atlas::begin_frame();
-            let need_flush_buffer = self.update_inner(&mut ctx, frames);
+            let need_flush_buffer = self.update_inner(&mut ctx, frames).await;
             atlas::end_frame();
 
             need_flush_buffer
@@ -115,7 +115,7 @@ where
         self.flush_buffer_or_wait(need_flush_buffer).await;
     }
 
-    fn update_inner(&self, ctx: &mut UIContext<G>, frames: u64) -> bool {
+    async fn update_inner(&self, ctx: &mut UIContext<G>, frames: u64) -> bool {
         let (w, h) = self.reset_layout(ctx);
         if w == 0 || h == 0 {
             return false;
@@ -126,7 +126,7 @@ where
         }
 
         for _ in 0..frames {
-            ctx.game.update();
+            ctx.game.update().await;
         }
         if frames > 0 {
             self.draw_game(ctx)

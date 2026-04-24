@@ -19,6 +19,9 @@ pub(crate) struct Material {
     min_destination_size: i32,
 }
 
+unsafe impl Sync for Material {}
+unsafe impl Send for Material {}
+
 static MATERIAL: sync::OnceLock<Material> = sync::OnceLock::new();
 
 pub(crate) fn init_material(

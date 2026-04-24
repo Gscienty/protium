@@ -17,6 +17,9 @@ pub(super) struct ImageData {
     pub(super) node: packing::Tree<packing::PackingData>,
 }
 
+unsafe impl Sync for ImageData {}
+unsafe impl Send for ImageData {}
+
 #[derive(Clone, Debug)]
 pub(crate) struct Image {
     data: sync::Arc<sync::Mutex<ImageData>>,
@@ -183,11 +186,7 @@ impl Image {
         };
 
         if let Some(node) = data.node.take() {
-            let region = if let Ok(node) = node.lock() {
-                node.get_region()
-            } else {
-                utils::Rectangle::default()
-            };
+            let region = node.borrow().get_region();
             // clear
             backend.write_pixels(vec![], region);
 
@@ -391,10 +390,7 @@ impl Image {
         node: &packing::Tree<packing::PackingData>,
     ) -> utils::Rectangle {
         if let Some(node) = node.as_ref() {
-            let Ok(node) = node.lock() else {
-                return utils::Rectangle::new(0, 0, 0, 0);
-            };
-            node.get_region()
+            node.borrow().get_region()
         } else {
             let padding_size = Self::padding_size(image_type);
 

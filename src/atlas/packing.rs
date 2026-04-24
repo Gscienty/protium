@@ -1,8 +1,8 @@
-use std::{cell, rc, sync};
+use std::{cell, rc};
 
 use crate::utils;
 
-pub(super) type Tree<T> = Option<sync::Arc<sync::Mutex<TreeNode<T>>>>;
+pub(super) type Tree<T> = Option<rc::Rc<cell::RefCell<TreeNode<T>>>>;
 
 #[derive(Debug)]
 pub(super) struct TreeNode<T> {
@@ -30,7 +30,7 @@ pub(super) struct Page {
 
 impl<T> TreeNode<T> {
     fn new(parent: Tree<T>, value: T) -> Tree<T> {
-        Some(sync::Arc::new(sync::Mutex::new(Self {
+        Some(rc::Rc::new(cell::RefCell::new(Self {
             value,
 
             parent,
@@ -52,19 +52,13 @@ impl<T> TreeNode<T> {
             let Some(parent) = parent.as_ref() else {
                 return;
             };
-            let Ok(mut parent) = parent.lock() else {
-                return;
-            };
-            parent.child_0 = child.clone();
+            parent.borrow_mut().child_0 = child.clone();
         }
         {
             let Some(child) = child.as_ref() else {
                 return;
             };
-            let Ok(mut child) = child.lock() else {
-                return;
-            };
-            child.parent = parent.clone();
+            child.borrow_mut().parent = parent.clone();
         }
     }
 
@@ -73,19 +67,13 @@ impl<T> TreeNode<T> {
             let Some(parent) = parent.as_ref() else {
                 return;
             };
-            let Ok(mut parent) = parent.lock() else {
-                return;
-            };
-            parent.child_1 = child.clone();
+            parent.borrow_mut().child_1 = child.clone();
         }
         {
             let Some(child) = child.as_ref() else {
                 return;
             };
-            let Ok(mut child) = child.lock() else {
-                return;
-            };
-            child.parent = parent.clone();
+            child.borrow_mut().parent = parent.clone();
         }
     }
 
@@ -105,18 +93,12 @@ impl TreeNode<PackingData> {
         }
 
         if let Some(node) = self.child_0.as_ref() {
-            let Ok(node) = node.lock() else {
-                return false;
-            };
-            if !node.allow_free() {
+            if !node.borrow().allow_free() {
                 return false;
             }
         }
         if let Some(node) = self.child_1.as_ref() {
-            let Ok(node) = node.lock() else {
-                return false;
-            };
-            if !node.allow_free() {
+            if !node.borrow().allow_free() {
                 return false;
             }
         }
@@ -198,42 +180,39 @@ impl TreeNode<PackingData> {
 
     fn alloc(parent: &Tree<PackingData>, width: i32, height: i32) -> Tree<PackingData> {
         let node = parent.as_ref()?;
-        let Ok(mut node) = node.lock() else {
-            return None;
-        };
-        if node.check_out_of_region(width, height) || node.is_used() {
+        if node.borrow().check_out_of_region(width, height) || node.borrow().is_used() {
             return None;
         }
 
-        if node.child_0.is_none() && node.child_1.is_none() {
-            if node.check_equal_region(width, height) {
-                node.set_used(true);
+        if node.borrow().child_0.is_none() && node.borrow().child_1.is_none() {
+            if node.borrow().check_equal_region(width, height) {
+                node.borrow_mut().set_used(true);
                 return parent.clone();
             }
 
             let (node_width, node_height) = (
-                node.get_value().region.get_width(),
-                node.get_value().region.get_height(),
+                node.borrow().get_value().region.get_width(),
+                node.borrow().get_value().region.get_height(),
             );
 
             if Self::square(node_width - width, node_height)
                 >= Self::square(node_width, node_height - height)
             {
-                node.split_horizontal_child(parent, width);
+                node.borrow_mut().split_horizontal_child(parent, width);
             } else {
-                node.split_vertical_child(parent, height);
+                node.borrow_mut().split_vertical_child(parent, height);
             }
 
-            return Self::alloc(&node.child_0, width, height);
+            return Self::alloc(&node.borrow().child_0, width, height);
         }
 
-        if node.child_0.is_none() || node.child_1.is_none() {
+        if node.borrow().child_0.is_none() || node.borrow().child_1.is_none() {
             return None;
         }
-        if let Some(child) = Self::alloc(&node.child_0, width, height) {
+        if let Some(child) = Self::alloc(&node.borrow().child_0, width, height) {
             return Some(child);
         }
-        if let Some(child) = Self::alloc(&node.child_1, width, height) {
+        if let Some(child) = Self::alloc(&node.borrow().child_1, width, height) {
             return Some(child);
         }
 
@@ -244,32 +223,20 @@ impl TreeNode<PackingData> {
         let Some(node) = node.as_ref() else {
             return;
         };
-        let Ok(mut node) = node.lock() else {
-            return;
-        };
 
-        if node.child_0.is_some() || node.child_1.is_some() {
+        if node.borrow().child_0.is_some() || node.borrow().child_1.is_some() {
             return;
         }
-        node.set_used(false);
+        node.borrow_mut().set_used(false);
 
-        let allow_free = if let Some(parent) = node.parent.as_ref() {
-            let Ok(mut parent) = parent.lock() else {
-                return;
-            };
-            let bro_0_allow_free = if let Some(bro_0) = parent.child_0.as_ref() {
-                let Ok(bro_0) = bro_0.lock() else {
-                    return;
-                };
-                bro_0.allow_free()
+        let allow_free = if let Some(parent) = node.borrow().parent.as_ref() {
+            let bro_0_allow_free = if let Some(bro_0) = parent.borrow().child_0.as_ref() {
+                bro_0.borrow().allow_free()
             } else {
                 return;
             };
-            let bro_1_allow_free = if let Some(bro_1) = parent.child_1.as_ref() {
-                let Ok(bro_1) = bro_1.lock() else {
-                    return;
-                };
-                bro_1.allow_free()
+            let bro_1_allow_free = if let Some(bro_1) = parent.borrow().child_1.as_ref() {
+                bro_1.borrow().allow_free()
             } else {
                 return;
             };
@@ -277,8 +244,8 @@ impl TreeNode<PackingData> {
             let allow_free = bro_0_allow_free && bro_1_allow_free;
 
             if allow_free {
-                parent.child_0 = None;
-                parent.child_1 = None;
+                parent.borrow_mut().child_0 = None;
+                parent.borrow_mut().child_1 = None;
             }
 
             allow_free
@@ -287,7 +254,7 @@ impl TreeNode<PackingData> {
         };
 
         if allow_free {
-            Self::free(&node.parent);
+            Self::free(&node.borrow().parent);
         }
     }
 
@@ -310,15 +277,11 @@ impl TreeNode<PackingData> {
             return false;
         }
 
-        if let Some(node_) = node.as_ref() {
-            let Ok(node) = node_.lock() else {
-                return false;
-            };
-
-            if !Self::walk(&node.child_0, cb) {
+        if let Some(node) = node.as_ref() {
+            if !Self::walk(&node.borrow().child_0, cb) {
                 return false;
             }
-            if !Self::walk(&node.child_1, cb) {
+            if !Self::walk(&node.borrow().child_1, cb) {
                 return false;
             }
         }
@@ -328,19 +291,16 @@ impl TreeNode<PackingData> {
 
     fn clone_tree(tree: &Tree<PackingData>) -> Tree<PackingData> {
         let tree = tree.as_ref()?;
-        let Ok(tree) = tree.lock() else {
-            return None;
-        };
 
-        Some(sync::Arc::new(sync::Mutex::new(Self {
+        Some(rc::Rc::new(cell::RefCell::new(Self {
             value: PackingData {
-                used: tree.value.used,
-                region: tree.value.region,
+                used: tree.borrow().value.used,
+                region: tree.borrow().value.region,
             },
 
-            parent: tree.parent.clone(),
-            child_0: tree.child_0.clone(),
-            child_1: tree.child_1.clone(),
+            parent: tree.borrow().parent.clone(),
+            child_0: tree.borrow().child_0.clone(),
+            child_1: tree.borrow().child_1.clone(),
         })))
     }
 }
@@ -398,26 +358,26 @@ impl Page {
             i += 1;
 
             for j in 0..=i {
-                let mut width = self.width;
+                let mut new_page_width = self.width;
                 for _ in 0..(i - j) {
-                    width *= 2;
+                    new_page_width *= 2;
                 }
-                let mut height = self.height;
+                let mut new_page_height = self.height;
                 for _ in 0..j {
-                    height *= 2;
+                    new_page_height *= 2;
                 }
-                if width > self.max_size || height > self.max_size {
+                if new_page_width > self.max_size || new_page_height > self.max_size {
                     continue;
                 }
 
-                let rollback = self.extend(width, height);
+                let rollback = self.extend(new_page_width, new_page_height);
                 self.root.as_ref()?;
                 if let Some(node) = TreeNode::alloc(&self.root, width, height) {
                     return Some(node);
                 }
                 self.rollback(rollback);
 
-                if width >= self.max_size && height >= self.max_size {
+                if new_page_width >= self.max_size && new_page_height >= self.max_size {
                     return None;
                 }
             }
@@ -430,13 +390,12 @@ impl Page {
             let Some(node) = node_.as_ref() else {
                 return true;
             };
-            let Ok(node) = node.lock() else {
-                return false;
-            };
-            if node.value.region.max.x < self.width && node.value.region.max.y < self.height {
+            if node.borrow().value.region.max.x < self.width
+                && node.borrow().value.region.max.y < self.height
+            {
                 return true;
             }
-            if node.is_used() {
+            if node.borrow().is_used() {
                 return false;
             }
             edge_nodes.borrow_mut().push(node_.clone());
@@ -499,17 +458,14 @@ impl Page {
                 let Some(node) = node_.as_ref() else {
                     continue;
                 };
-                let Ok(mut node) = node.lock() else {
-                    continue;
-                };
 
-                if node.value.region.max.x == self.width {
-                    x_edges.push((node_.clone(), node.value.region.max.x));
-                    node.value.region.max.x = width;
+                if node.borrow().value.region.max.x == self.width {
+                    x_edges.push((node_.clone(), node.borrow().value.region.max.x));
+                    node.borrow_mut().value.region.max.x = width;
                 }
-                if node.value.region.max.y == self.height {
-                    y_edges.push((node_.clone(), node.value.region.max.y));
-                    node.value.region.max.y = height;
+                if node.borrow().value.region.max.y == self.height {
+                    y_edges.push((node_.clone(), node.borrow().value.region.max.y));
+                    node.borrow_mut().value.region.max.y = height;
                 }
             }
 
@@ -550,19 +506,13 @@ impl Page {
                     let Some(node) = node.as_ref() else {
                         continue;
                     };
-                    let Ok(mut node) = node.lock() else {
-                        continue;
-                    };
-                    node.value.region.max.x = x;
+                    node.borrow_mut().value.region.max.x = x;
                 }
                 for (node, y) in y_edges {
                     let Some(node) = node.as_ref() else {
                         continue;
                     };
-                    let Ok(mut node) = node.lock() else {
-                        continue;
-                    };
-                    node.value.region.max.y = y;
+                    node.borrow_mut().value.region.max.y = y;
                 }
             }
         }

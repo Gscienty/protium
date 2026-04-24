@@ -4,7 +4,7 @@ use std::sync;
 pub trait Game: Send + Sync {
     fn set_actual_fps(&mut self, actual_fps: f64);
 
-    fn update(&mut self);
+    async fn update(&mut self);
 
     fn new_offscreen(
         &mut self,
