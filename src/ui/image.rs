@@ -46,7 +46,9 @@ impl Image {
         source: Option<&'_ Image>,
         blend: renderer::Blend,
     ) -> Option<drawing::Drawing> {
-        let mut drawing = self.image.draw(region, source.map(|image| &image.image))?;
+        let mut drawing = self
+            .image
+            .draw(region, source.map(|image| &image.image), false)?;
         drawing.set_blend(blend);
         if let Some(cb) = self.modify_callback.as_ref() {
             cb();
@@ -71,7 +73,10 @@ impl Image {
             cb();
         }
 
-        let Some(mut drawing) = self.image.draw(destination_region, Some(get_white_image())) else {
+        let Some(mut drawing) = self
+            .image
+            .draw(destination_region, Some(get_white_image()), false)
+        else {
             return;
         };
         drawing.dst_src(atlas::AtlasDrawingQuadDstSrc::new(

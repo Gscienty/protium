@@ -26,9 +26,6 @@ pub use run::{init, run_game};
 pub use ui::{InputState, Key, MouseButton};
 
 extern crate console_error_panic_hook;
-use std::panic;
-
-use crate::text::FontSet;
 
 // #[wasm_bindgen_futures::wasm_bindgen::prelude::wasm_bindgen]
 // pub async fn run(canvas: web_sys::HtmlCanvasElement) {
@@ -38,9 +35,7 @@ use crate::text::FontSet;
 // }
 
 #[wasm_bindgen::prelude::wasm_bindgen]
-extern "C" {
-    // Use `js_namespace` here to bind `console.log(..)` instead of just
-    // `log(..)`
+unsafe extern "C" {
     #[wasm_bindgen::prelude::wasm_bindgen(js_namespace = console)]
     pub fn log(s: &str);
 }

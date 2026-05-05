@@ -1,312 +1,230 @@
-use std::{cell, rc};
+use std::{cell::RefCell, f64, rc::Rc};
 
 use crate::utils;
 
-pub(super) type Tree<T> = Option<rc::Rc<cell::RefCell<TreeNode<T>>>>;
-
-#[derive(Debug)]
-pub(super) struct TreeNode<T> {
-    value: T,
-
-    parent: Tree<T>,
-    child_0: Tree<T>,
-    child_1: Tree<T>,
-}
-
-#[derive(Debug)]
-pub(super) struct PackingData {
-    used: bool,
+#[derive(Debug, Clone)]
+pub(crate) struct NodeInner {
     region: utils::Rectangle,
+    used: bool,
+
+    parent: Option<Rc<RefCell<NodeInner>>>,
+    child_0: Option<Rc<RefCell<NodeInner>>>,
+    child_1: Option<Rc<RefCell<NodeInner>>>,
+}
+
+pub(crate) type Node = Rc<RefCell<NodeInner>>;
+
+impl NodeInner {
+    pub(crate) fn get_region(&self) -> utils::Rectangle {
+        self.region
+    }
+
+    fn can_free(&self) -> bool {
+        if self.used {
+            return false;
+        }
+
+        if let Some(child) = &self.child_0
+            && !child.borrow().can_free()
+        {
+            return false;
+        }
+        if let Some(child) = &self.child_1
+            && !child.borrow().can_free()
+        {
+            return false;
+        }
+
+        true
+    }
+
+    fn alloc(
+        parent: &Rc<RefCell<NodeInner>>,
+        width: i32,
+        height: i32,
+    ) -> Option<Rc<RefCell<NodeInner>>> {
+        {
+            let node = parent.borrow_mut();
+            if node.region.get_width() < width || node.region.get_height() < height {
+                return None;
+            }
+            if node.used {
+                return None;
+            }
+        }
+
+        if parent.borrow().child_0.is_none() && parent.borrow().child_1.is_none() {
+            if parent.borrow().region.get_width() == width
+                && parent.borrow().region.get_height() == height
+            {
+                parent.borrow_mut().used = true;
+                return Some(parent.clone());
+            }
+
+            let mut node = parent.borrow_mut();
+            if square(node.region.get_width() - width, node.region.get_height())
+                >= square(node.region.get_width(), node.region.get_height() - height)
+            {
+                node.child_0 = Some(Rc::new(RefCell::new(Self {
+                    region: utils::Rectangle::new_pos(
+                        node.region.min.x,
+                        node.region.min.y,
+                        node.region.min.x + width,
+                        node.region.max.y,
+                    ),
+                    used: false,
+
+                    parent: Some(parent.clone()),
+                    child_0: None,
+                    child_1: None,
+                })));
+
+                node.child_1 = Some(Rc::new(RefCell::new(Self {
+                    region: utils::Rectangle::new_pos(
+                        node.region.min.x + width,
+                        node.region.min.y,
+                        node.region.max.x,
+                        node.region.max.y,
+                    ),
+                    used: false,
+
+                    parent: Some(parent.clone()),
+                    child_0: None,
+                    child_1: None,
+                })));
+            } else {
+                node.child_0 = Some(Rc::new(RefCell::new(Self {
+                    region: utils::Rectangle::new_pos(
+                        node.region.min.x,
+                        node.region.min.y,
+                        node.region.max.x,
+                        node.region.min.y + height,
+                    ),
+                    used: false,
+
+                    parent: Some(parent.clone()),
+                    child_0: None,
+                    child_1: None,
+                })));
+
+                node.child_1 = Some(Rc::new(RefCell::new(Self {
+                    region: utils::Rectangle::new_pos(
+                        node.region.min.x,
+                        node.region.min.y + height,
+                        node.region.max.x,
+                        node.region.max.y,
+                    ),
+                    used: false,
+
+                    parent: Some(parent.clone()),
+                    child_0: None,
+                    child_1: None,
+                })));
+            }
+
+            if let Some(node) = &node.child_0 {
+                return Self::alloc(node, width, height);
+            } else {
+                return None;
+            }
+        }
+
+        let node = parent.borrow();
+        if node.child_0.is_none() || node.child_1.is_none() {
+            return None;
+        }
+        if let Some(child) = node.child_0.as_ref()
+            && let Some(node) = Self::alloc(child, width, height)
+        {
+            return Some(node);
+        }
+        if let Some(child) = node.child_1.as_ref()
+            && let Some(node) = Self::alloc(child, width, height)
+        {
+            return Some(node);
+        }
+        None
+    }
+
+    fn walk<F>(node: &Rc<RefCell<Self>>, mut f: F) -> Result<(), ()>
+    where
+        F: FnMut(&Rc<RefCell<Self>>) -> Result<(), ()> + Copy,
+    {
+        f(node)?;
+
+        if let Some(child) = &node.borrow().child_0 {
+            Self::walk(child, f)?;
+        }
+        if let Some(child) = &node.borrow().child_1 {
+            Self::walk(child, f)?;
+        }
+
+        Ok(())
+    }
+}
+
+pub(crate) fn free(node: &Rc<RefCell<NodeInner>>) -> Result<(), ()> {
+    {
+        let node = node.borrow();
+        if node.child_0.is_some() || node.child_1.is_some() {
+            return Err(());
+        }
+    }
+    node.borrow_mut().used = false;
+
+    let (parent, can_free) = if let Some(parent) = &node.borrow().parent {
+        let parent_node = parent.borrow();
+
+        let left_can_free = if let Some(left) = &parent_node.child_0 {
+            left.borrow().can_free()
+        } else {
+            return Err(());
+        };
+        let right_can_free = if let Some(right) = &parent_node.child_1 {
+            right.borrow().can_free()
+        } else {
+            return Err(());
+        };
+
+        (parent.clone(), left_can_free && right_can_free)
+    } else {
+        return Ok(());
+    };
+    if can_free {
+        {
+            let mut parent = parent.borrow_mut();
+            parent.child_0 = None;
+            parent.child_1 = None;
+        }
+
+        free(&parent)?;
+    }
+
+    Ok(())
+}
+
+fn square(width: i32, height: i32) -> f64 {
+    if width == 0 && height == 0 {
+        return 0.;
+    }
+
+    if width <= height {
+        return width as f64 / height as f64;
+    }
+    height as f64 / width as f64
 }
 
 #[derive(Debug)]
-pub(super) struct Page {
-    root: Tree<PackingData>,
+pub(crate) struct Page {
+    root: Option<Rc<RefCell<NodeInner>>>,
 
     width: i32,
     height: i32,
     max_size: i32,
 }
 
-impl<T> TreeNode<T> {
-    fn new(parent: Tree<T>, value: T) -> Tree<T> {
-        Some(rc::Rc::new(cell::RefCell::new(Self {
-            value,
-
-            parent,
-            child_0: None,
-            child_1: None,
-        })))
-    }
-
-    fn set_child_0(&mut self, parent: &Tree<T>, value: T) {
-        self.child_0 = Self::new(parent.clone(), value);
-    }
-
-    fn set_child_1(&mut self, parent: &Tree<T>, value: T) {
-        self.child_1 = Self::new(parent.clone(), value);
-    }
-
-    fn assign_child_0(parent: &Tree<T>, child: &Tree<T>) {
-        {
-            let Some(parent) = parent.as_ref() else {
-                return;
-            };
-            parent.borrow_mut().child_0 = child.clone();
-        }
-        {
-            let Some(child) = child.as_ref() else {
-                return;
-            };
-            child.borrow_mut().parent = parent.clone();
-        }
-    }
-
-    fn assign_child_1(parent: &Tree<T>, child: &Tree<T>) {
-        {
-            let Some(parent) = parent.as_ref() else {
-                return;
-            };
-            parent.borrow_mut().child_1 = child.clone();
-        }
-        {
-            let Some(child) = child.as_ref() else {
-                return;
-            };
-            child.borrow_mut().parent = parent.clone();
-        }
-    }
-
-    fn get_value(&self) -> &T {
-        &self.value
-    }
-}
-
-impl TreeNode<PackingData> {
-    pub(crate) fn get_region(&self) -> utils::Rectangle {
-        self.value.region
-    }
-
-    fn allow_free(&self) -> bool {
-        if self.value.used {
-            return false;
-        }
-
-        if let Some(node) = self.child_0.as_ref() {
-            if !node.borrow().allow_free() {
-                return false;
-            }
-        }
-        if let Some(node) = self.child_1.as_ref() {
-            if !node.borrow().allow_free() {
-                return false;
-            }
-        }
-
-        true
-    }
-
-    fn check_out_of_region(&self, width: i32, height: i32) -> bool {
-        self.value.region.get_width() < width || self.value.region.get_height() < height
-    }
-
-    fn check_equal_region(&self, width: i32, height: i32) -> bool {
-        self.value.region.get_width() == width && self.value.region.get_height() == height
-    }
-
-    fn is_used(&self) -> bool {
-        self.value.used
-    }
-
-    fn set_used(&mut self, used: bool) {
-        self.value.used = used;
-    }
-
-    fn split_horizontal_child(&mut self, parent: &Tree<PackingData>, width: i32) {
-        self.set_child_0(
-            parent,
-            PackingData {
-                region: utils::Rectangle::new_pos(
-                    self.value.region.min.x,
-                    self.value.region.min.y,
-                    self.value.region.min.x + width,
-                    self.value.region.max.y,
-                ),
-                used: false,
-            },
-        );
-
-        self.set_child_1(
-            parent,
-            PackingData {
-                region: utils::Rectangle::new_pos(
-                    self.value.region.min.x + width,
-                    self.value.region.min.y,
-                    self.value.region.max.x,
-                    self.value.region.max.y,
-                ),
-                used: false,
-            },
-        );
-    }
-
-    fn split_vertical_child(&mut self, parent: &Tree<PackingData>, height: i32) {
-        self.set_child_0(
-            parent,
-            PackingData {
-                region: utils::Rectangle::new_pos(
-                    self.value.region.min.x,
-                    self.value.region.min.y,
-                    self.value.region.max.x,
-                    self.value.region.min.y + height,
-                ),
-                used: false,
-            },
-        );
-
-        self.set_child_1(
-            parent,
-            PackingData {
-                region: utils::Rectangle::new_pos(
-                    self.value.region.min.x,
-                    self.value.region.min.y + height,
-                    self.value.region.max.x,
-                    self.value.region.max.y,
-                ),
-                used: false,
-            },
-        );
-    }
-
-    fn alloc(parent: &Tree<PackingData>, width: i32, height: i32) -> Tree<PackingData> {
-        let node = parent.as_ref()?;
-        if node.borrow().check_out_of_region(width, height) || node.borrow().is_used() {
-            return None;
-        }
-
-        if node.borrow().child_0.is_none() && node.borrow().child_1.is_none() {
-            if node.borrow().check_equal_region(width, height) {
-                node.borrow_mut().set_used(true);
-                return parent.clone();
-            }
-
-            let (node_width, node_height) = (
-                node.borrow().get_value().region.get_width(),
-                node.borrow().get_value().region.get_height(),
-            );
-
-            if Self::square(node_width - width, node_height)
-                >= Self::square(node_width, node_height - height)
-            {
-                node.borrow_mut().split_horizontal_child(parent, width);
-            } else {
-                node.borrow_mut().split_vertical_child(parent, height);
-            }
-
-            return Self::alloc(&node.borrow().child_0, width, height);
-        }
-
-        if node.borrow().child_0.is_none() || node.borrow().child_1.is_none() {
-            return None;
-        }
-        if let Some(child) = Self::alloc(&node.borrow().child_0, width, height) {
-            return Some(child);
-        }
-        if let Some(child) = Self::alloc(&node.borrow().child_1, width, height) {
-            return Some(child);
-        }
-
-        None
-    }
-
-    pub(super) fn free(node: &Tree<PackingData>) {
-        let Some(node) = node.as_ref() else {
-            return;
-        };
-
-        if node.borrow().child_0.is_some() || node.borrow().child_1.is_some() {
-            return;
-        }
-        node.borrow_mut().set_used(false);
-
-        let allow_free = if let Some(parent) = node.borrow().parent.as_ref() {
-            let bro_0_allow_free = if let Some(bro_0) = parent.borrow().child_0.as_ref() {
-                bro_0.borrow().allow_free()
-            } else {
-                return;
-            };
-            let bro_1_allow_free = if let Some(bro_1) = parent.borrow().child_1.as_ref() {
-                bro_1.borrow().allow_free()
-            } else {
-                return;
-            };
-
-            let allow_free = bro_0_allow_free && bro_1_allow_free;
-
-            if allow_free {
-                parent.borrow_mut().child_0 = None;
-                parent.borrow_mut().child_1 = None;
-            }
-
-            allow_free
-        } else {
-            return;
-        };
-
-        if allow_free {
-            Self::free(&node.borrow().parent);
-        }
-    }
-
-    fn square(width: i32, height: i32) -> f64 {
-        if width == 0 && height == 0 {
-            return 0.;
-        }
-
-        if width <= height {
-            return width as f64 / height as f64;
-        }
-        height as f64 / width as f64
-    }
-
-    fn walk<F>(node: &Tree<PackingData>, mut cb: F) -> bool
-    where
-        F: FnMut(&Tree<PackingData>) -> bool + Copy,
-    {
-        if !cb(node) {
-            return false;
-        }
-
-        if let Some(node) = node.as_ref() {
-            if !Self::walk(&node.borrow().child_0, cb) {
-                return false;
-            }
-            if !Self::walk(&node.borrow().child_1, cb) {
-                return false;
-            }
-        }
-
-        true
-    }
-
-    fn clone_tree(tree: &Tree<PackingData>) -> Tree<PackingData> {
-        let tree = tree.as_ref()?;
-
-        Some(rc::Rc::new(cell::RefCell::new(Self {
-            value: PackingData {
-                used: tree.borrow().value.used,
-                region: tree.borrow().value.region,
-            },
-
-            parent: tree.borrow().parent.clone(),
-            child_0: tree.borrow().child_0.clone(),
-            child_1: tree.borrow().child_1.clone(),
-        })))
-    }
-}
-
 impl Page {
-    pub(crate) fn new(width: i32, height: i32, max_size: i32) -> Self {
+    pub(crate) fn new(width: i32, height: i32, max_size: i32) -> Page {
         Self {
             root: None,
 
@@ -316,223 +234,416 @@ impl Page {
         }
     }
 
-    pub(crate) fn size(&self) -> (i32, i32) {
+    pub(crate) const fn size(&self) -> (i32, i32) {
         (self.width, self.height)
     }
 
-    // pub(crate) fn is_empty(&self) -> bool {
-    //     let Some(root) = self.root.as_ref() else {
-    //         return true;
-    //     };
-    //     let Ok(root) = root.lock() else {
-    //         return true;
-    //     };
-    //
-    //     !root.value.used && root.child_0.is_none() && root.child_1.is_none()
-    // }
+    pub(crate) fn is_empty(&self) -> bool {
+        if let Some(root) = &self.root {
+            let root = root.borrow();
 
-    pub(crate) fn alloc(&mut self, width: i32, height: i32) -> Tree<PackingData> {
+            !root.used && root.child_0.is_none() && root.child_1.is_none()
+        } else {
+            true
+        }
+    }
+
+    pub(crate) fn alloc(&mut self, width: i32, height: i32) -> Option<Node> {
         if self.root.is_none() {
-            self.root = TreeNode::new(
-                None,
-                PackingData {
-                    region: utils::Rectangle::new_pos(0, 0, width, height),
-                    used: false,
-                },
-            );
+            self.root = Some(Rc::new(RefCell::new(NodeInner {
+                region: utils::Rectangle::new_pos(0, 0, self.width, self.height),
+                used: false,
+
+                parent: None,
+                child_0: None,
+                child_1: None,
+            })));
         }
 
         self.extend_and_alloc(width, height)
     }
 
-    fn extend_and_alloc(&mut self, width: i32, height: i32) -> Tree<PackingData> {
-        if let Some(node) = TreeNode::alloc(&self.root, width, height) {
+    fn extend_and_alloc(&mut self, width: i32, height: i32) -> Option<Node> {
+        let Some(root) = &self.root else {
+            return None;
+        };
+        if let Some(node) = NodeInner::alloc(root, width, height) {
             return Some(node);
-        }
+        };
         if self.width >= self.max_size && self.height >= self.max_size {
             return None;
         }
-
         let mut i = 0;
         loop {
             i += 1;
 
             for j in 0..=i {
-                let mut new_page_width = self.width;
+                let mut new_width = self.width;
                 for _ in 0..(i - j) {
-                    new_page_width *= 2;
+                    new_width *= 2;
                 }
-                let mut new_page_height = self.height;
+                let mut new_height = self.height;
                 for _ in 0..j {
-                    new_page_height *= 2;
+                    new_height *= 2;
                 }
-                if new_page_width > self.max_size || new_page_height > self.max_size {
+
+                if new_width > self.max_size || new_height > self.max_size {
                     continue;
                 }
 
-                let rollback = self.extend(new_page_width, new_page_height);
-                self.root.as_ref()?;
-                if let Some(node) = TreeNode::alloc(&self.root, width, height) {
+                let rollback = self.extend(new_width, new_height);
+                let Some(root) = &self.root else {
+                    return None;
+                };
+                if let Some(node) = NodeInner::alloc(root, new_width, new_height) {
                     return Some(node);
                 }
-                self.rollback(rollback);
+                rollback.apply(self);
 
-                if new_page_width >= self.max_size && new_page_height >= self.max_size {
+                if new_width >= self.max_size && new_height >= self.max_size {
                     return None;
                 }
             }
         }
     }
 
-    fn extend(&mut self, width: i32, height: i32) -> ExtendRollback {
-        let edge_nodes = rc::Rc::new(cell::RefCell::new(Vec::new()));
-        let aborted = !TreeNode::walk(&self.root, |node_| {
-            let Some(node) = node_.as_ref() else {
-                return true;
-            };
-            if node.borrow().value.region.max.x < self.width
-                && node.borrow().value.region.max.y < self.height
-            {
-                return true;
-            }
-            if node.borrow().is_used() {
-                return false;
-            }
-            edge_nodes.borrow_mut().push(node_.clone());
+    fn extend(&mut self, new_width: i32, new_height: i32) -> ExtendRollback {
+        let edge_nodes = Rc::new(RefCell::new(Vec::new()));
+        let mut aborted = false;
+        if let Some(root) = &self.root {
+            aborted = NodeInner::walk(root, |node| {
+                if node.borrow().region.max.x < self.width
+                    && node.borrow().region.max.y < self.height
+                {
+                    return Ok(());
+                }
+                if node.borrow().used {
+                    return Err(());
+                }
+                edge_nodes.borrow_mut().push(node.clone());
 
-            true
-        });
+                Ok(())
+            })
+            .is_err();
+        }
 
         let rollback = if aborted {
-            let cloned_root = TreeNode::clone_tree(&self.root);
+            let root_value = self.root.as_ref().map(|root| NodeInner {
+                region: root.borrow().region,
+                used: root.borrow().used,
 
-            if height > self.height {
+                parent: None,
+                child_0: root.borrow().child_0.clone(),
+                child_1: root.borrow().child_1.clone(),
+            });
+
+            if new_height > self.height {
                 let upper = self.root.clone();
-                let lower = TreeNode::new(
-                    None,
-                    PackingData {
-                        used: false,
-                        region: utils::Rectangle::new(0, self.height, self.width, height),
-                    },
-                );
+                let lower = Some(Rc::new(RefCell::new(NodeInner {
+                    region: utils::Rectangle::new_pos(0, self.height, self.width, new_height),
+                    used: false,
 
-                self.root = TreeNode::new(
-                    None,
-                    PackingData {
-                        used: false,
-                        region: utils::Rectangle::new(0, 0, self.width, height),
-                    },
-                );
-                TreeNode::assign_child_0(&self.root, &upper);
-                TreeNode::assign_child_1(&self.root, &lower);
+                    parent: None,
+                    child_0: None,
+                    child_1: None,
+                })));
+                self.root = Some(Rc::new(RefCell::new(NodeInner {
+                    region: utils::Rectangle::new_pos(0, 0, self.width, new_height),
+                    used: false,
+
+                    parent: None,
+                    child_0: upper.clone(),
+                    child_1: lower.clone(),
+                })));
+
+                if let Some(node) = &upper {
+                    node.borrow_mut().parent = self.root.clone();
+                }
+                if let Some(node) = &lower {
+                    node.borrow_mut().parent = self.root.clone();
+                }
             }
-            if width > self.width {
+            if new_width > self.width {
                 let left = self.root.clone();
-                let right = TreeNode::new(
-                    None,
-                    PackingData {
-                        used: false,
-                        region: utils::Rectangle::new(self.width, 0, width, height),
-                    },
-                );
-                self.root = TreeNode::new(
-                    None,
-                    PackingData {
-                        used: false,
-                        region: utils::Rectangle::new(0, 0, width, height),
-                    },
-                );
-                TreeNode::assign_child_0(&self.root, &left);
-                TreeNode::assign_child_1(&self.root, &right);
+                let right = Some(Rc::new(RefCell::new(NodeInner {
+                    region: utils::Rectangle::new_pos(self.width, 0, new_width, new_height),
+
+                    used: false,
+
+                    parent: None,
+                    child_0: None,
+                    child_1: None,
+                })));
+                self.root = Some(Rc::new(RefCell::new(NodeInner {
+                    region: utils::Rectangle::new_pos(0, 0, new_width, new_height),
+                    used: false,
+
+                    parent: None,
+                    child_0: left.clone(),
+                    child_1: right.clone(),
+                })));
+                if let Some(node) = &left {
+                    node.borrow_mut().parent = self.root.clone();
+                }
+                if let Some(node) = &right {
+                    node.borrow_mut().parent = self.root.clone();
+                }
             }
 
-            ExtendRollback::Aborted(Aborted {
+            ExtendRollback::Aborted(ExtendRollbackAborted {
                 width: self.width,
                 height: self.height,
-                root: cloned_root,
+                root: self.root.clone(),
+                root_value,
             })
         } else {
-            let mut x_edges = Vec::new();
-            let mut y_edges = Vec::new();
-            for node_ in edge_nodes.borrow().iter() {
-                let Some(node) = node_.as_ref() else {
-                    continue;
-                };
-
-                if node.borrow().value.region.max.x == self.width {
-                    x_edges.push((node_.clone(), node.borrow().value.region.max.x));
-                    node.borrow_mut().value.region.max.x = width;
+            let mut origin_x = Vec::new();
+            let mut origin_y = Vec::new();
+            for node in edge_nodes.borrow().iter() {
+                if node.borrow().region.max.x == self.width {
+                    origin_x.push((node.clone(), node.borrow().region.max.x));
+                    node.borrow_mut().region.max.x = new_width;
                 }
-                if node.borrow().value.region.max.y == self.height {
-                    y_edges.push((node_.clone(), node.borrow().value.region.max.y));
-                    node.borrow_mut().value.region.max.y = height;
+                if node.borrow().region.max.y == self.height {
+                    origin_y.push((node.clone(), node.borrow().region.max.y));
+                    node.borrow_mut().region.max.y = new_height;
                 }
             }
-
-            ExtendRollback::NonAborted(NonAborted {
+            ExtendRollback::NonAborted(ExtendRollbackNonAborted {
                 width: self.width,
                 height: self.height,
-                x_edges,
-                y_edges,
+                origin_x,
+                origin_y,
             })
         };
 
-        self.width = width;
-        self.height = height;
+        self.width = new_width;
+        self.height = new_height;
 
         rollback
     }
+}
 
-    fn rollback(&mut self, rollback: ExtendRollback) {
-        match rollback {
-            ExtendRollback::Aborted(Aborted {
-                width,
-                height,
-                root,
-            }) => {
-                self.width = width;
-                self.height = height;
-                self.root = root;
-            }
-            ExtendRollback::NonAborted(NonAborted {
-                width,
-                height,
-                x_edges,
-                y_edges,
-            }) => {
-                self.width = width;
-                self.height = height;
-                for (node, x) in x_edges {
-                    let Some(node) = node.as_ref() else {
-                        continue;
-                    };
-                    node.borrow_mut().value.region.max.x = x;
+struct ExtendRollbackAborted {
+    width: i32,
+    height: i32,
+    root: Option<Rc<RefCell<NodeInner>>>,
+    root_value: Option<NodeInner>,
+}
+
+struct ExtendRollbackNonAborted {
+    width: i32,
+    height: i32,
+    origin_x: Vec<(Rc<RefCell<NodeInner>>, i32)>,
+    origin_y: Vec<(Rc<RefCell<NodeInner>>, i32)>,
+}
+
+enum ExtendRollback {
+    Aborted(ExtendRollbackAborted),
+    NonAborted(ExtendRollbackNonAborted),
+}
+
+impl ExtendRollback {
+    fn apply(self, page: &mut Page) {
+        match self {
+            Self::Aborted(history) => {
+                page.width = history.width;
+                page.height = history.height;
+                page.root = history.root;
+                let Some(history_value) = history.root_value else {
+                    return;
+                };
+                if let Some(root) = &page.root {
+                    let mut root = root.borrow_mut();
+                    root.region = history_value.region;
+                    root.used = history_value.used;
+                    root.parent = None;
+                    root.child_0 = history_value.child_0;
+                    root.child_1 = history_value.child_1;
                 }
-                for (node, y) in y_edges {
-                    let Some(node) = node.as_ref() else {
-                        continue;
-                    };
-                    node.borrow_mut().value.region.max.y = y;
+            }
+            Self::NonAborted(history) => {
+                page.width = history.width;
+                page.height = history.height;
+
+                for (node, x) in history.origin_x {
+                    node.borrow_mut().region.max.x = x;
+                }
+                for (node, y) in history.origin_y {
+                    node.borrow_mut().region.max.y = y;
                 }
             }
         }
     }
 }
 
-struct Aborted {
-    width: i32,
-    height: i32,
-    root: Tree<PackingData>,
-}
+#[cfg(test)]
+mod tests {
+    use super::*;
 
-struct NonAborted {
-    width: i32,
-    height: i32,
-    x_edges: Vec<(Tree<PackingData>, i32)>,
-    y_edges: Vec<(Tree<PackingData>, i32)>,
-}
+    struct Op {
+        width: i32,
+        height: i32,
+        free_node_id: i32,
+    }
 
-enum ExtendRollback {
-    Aborted(Aborted),
-    NonAborted(NonAborted),
+    impl Op {
+        fn new(width: i32, height: i32, free_node_id: i32) -> Self {
+            Self {
+                width,
+                height,
+                free_node_id,
+            }
+        }
+    }
+
+    struct Case {
+        name: String,
+        in_op: Vec<Op>,
+        out_rect: Vec<Option<utils::Rectangle>>,
+    }
+
+    #[test]
+    fn test_page() {
+        let cases = [
+            Case {
+                name: "alloc & random free".to_string(),
+                in_op: vec![
+                    Op::new(100, 100, -1),
+                    Op::new(100, 100, -1),
+                    Op::new(100, 100, -1),
+                    Op::new(100, 100, -1),
+                    Op::new(100, 100, -1),
+                    Op::new(100, 100, -1),
+                    Op::new(0, 0, 1),
+                    Op::new(0, 0, 3),
+                    Op::new(0, 0, 5),
+                    Op::new(0, 0, 0),
+                    Op::new(0, 0, 2),
+                    Op::new(0, 0, 4),
+                    Op::new(1024, 1024, -1),
+                ],
+                out_rect: vec![
+                    Some(utils::Rectangle::new_pos(0, 0, 100, 100)),
+                    Some(utils::Rectangle::new_pos(0, 100, 100, 200)),
+                    Some(utils::Rectangle::new_pos(0, 200, 100, 300)),
+                    Some(utils::Rectangle::new_pos(0, 300, 100, 400)),
+                    Some(utils::Rectangle::new_pos(0, 400, 100, 500)),
+                    Some(utils::Rectangle::new_pos(0, 500, 100, 600)),
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    Some(utils::Rectangle::new_pos(0, 0, 1024, 1024)),
+                ],
+            },
+            Case {
+                name: "alloc & free".to_string(),
+                in_op: vec![
+                    Op::new(31, 41, -1),
+                    Op::new(59, 26, -1),
+                    Op::new(53, 58, -1),
+                    Op::new(97, 93, -1),
+                    Op::new(28, 84, -1),
+                    Op::new(62, 64, -1),
+                    Op::new(0, 0, 0),
+                    Op::new(0, 0, 1),
+                    Op::new(0, 0, 2),
+                    Op::new(0, 0, 3),
+                    Op::new(0, 0, 4),
+                    Op::new(0, 0, 5),
+                ],
+                out_rect: vec![
+                    Some(utils::Rectangle::new_pos(0, 0, 31, 41)),
+                    Some(utils::Rectangle::new_pos(31, 0, 31 + 59, 26)),
+                    Some(utils::Rectangle::new_pos(31, 26, 31 + 53, 26 + 58)),
+                    Some(utils::Rectangle::new_pos(31, 84, 31 + 97, 84 + 93)),
+                    Some(utils::Rectangle::new_pos(0, 41, 28, 41 + 84)),
+                    Some(utils::Rectangle::new_pos(31, 177, 31 + 62, 177 + 64)),
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                ],
+            },
+            Case {
+                name: "fill square".to_string(),
+                in_op: vec![
+                    Op::new(256, 256, -1),
+                    Op::new(256, 256, -1),
+                    Op::new(256, 256, -1),
+                    Op::new(256, 256, -1),
+                    Op::new(256, 256, -1),
+                    Op::new(256, 256, -1),
+                    Op::new(256, 256, -1),
+                    Op::new(256, 256, -1),
+                    Op::new(256, 256, -1),
+                    Op::new(256, 256, -1),
+                    Op::new(256, 256, -1),
+                    Op::new(256, 256, -1),
+                    Op::new(256, 256, -1),
+                    Op::new(256, 256, -1),
+                    Op::new(256, 256, -1),
+                    Op::new(256, 256, -1),
+                    Op::new(256, 256, -1),
+                ],
+                out_rect: vec![
+                    Some(utils::Rectangle::new_pos(0, 0, 256, 256)),
+                    Some(utils::Rectangle::new_pos(0, 256, 256, 512)),
+                    Some(utils::Rectangle::new_pos(0, 512, 256, 768)),
+                    Some(utils::Rectangle::new_pos(0, 768, 256, 1024)),
+                    Some(utils::Rectangle::new_pos(256, 0, 512, 256)),
+                    Some(utils::Rectangle::new_pos(512, 0, 768, 256)),
+                    Some(utils::Rectangle::new_pos(768, 0, 1024, 256)),
+                    Some(utils::Rectangle::new_pos(256, 256, 512, 512)),
+                    Some(utils::Rectangle::new_pos(256, 512, 512, 768)),
+                    Some(utils::Rectangle::new_pos(256, 768, 512, 1024)),
+                    Some(utils::Rectangle::new_pos(512, 256, 768, 512)),
+                    Some(utils::Rectangle::new_pos(768, 256, 1024, 512)),
+                    Some(utils::Rectangle::new_pos(512, 512, 768, 768)),
+                    Some(utils::Rectangle::new_pos(512, 768, 768, 1024)),
+                    Some(utils::Rectangle::new_pos(768, 512, 1024, 768)),
+                    Some(utils::Rectangle::new_pos(768, 768, 1024, 1024)),
+                    None,
+                ],
+            },
+        ];
+
+        for case in cases.iter() {
+            let mut p = Page::new(1024, 1024, 1024);
+            let mut nodes = Vec::new();
+            let mut nnodes = 0;
+
+            for inp in case.in_op.iter() {
+                if inp.free_node_id == -1 {
+                    let n = p.alloc(inp.width, inp.height);
+                    nodes.push(n);
+                    nnodes += 1;
+                } else {
+                    let Some(node) = nodes[inp.free_node_id as usize].as_ref() else {
+                        continue;
+                    };
+                    let _ = free(node);
+                    nodes.push(None);
+                    nnodes -= 1;
+                }
+            }
+
+            assert_eq!(p.is_empty(), nnodes == 0);
+
+            for (i, &out) in case.out_rect.iter().enumerate() {
+                if let Some(node) = nodes[i].as_ref() {
+                    let region = node.borrow().region;
+                    println!("{:?} {:?}", out, region);
+                    assert!(matches!(out, Some(out_region) if out_region == region));
+                } else {
+                    assert!(out.is_none());
+                }
+            }
+        }
+    }
 }

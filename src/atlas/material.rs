@@ -4,14 +4,14 @@ use crate::renderer;
 
 use super::{backend, delay};
 
-pub(super) struct MaterialData {
+pub struct MaterialData {
     atlas_set: collections::HashMap<renderer::ImageID, backend::Backend>,
     inframe: bool,
     inframe_source: collections::HashSet<renderer::ImageID>,
     delay: collections::VecDeque<delay::DelayCommand>,
 }
 
-pub(crate) struct Material {
+pub struct Material {
     data: sync::Mutex<MaterialData>,
     renderer: renderer::Renderer,
     max_size: i32,
@@ -69,7 +69,7 @@ where
     cb(material)
 }
 
-pub(super) fn process_material_data<F, T>(cb: F) -> Option<T>
+pub fn process_material_data<F, T>(cb: F) -> Option<T>
 where
     F: FnOnce(&mut MaterialData, &Material) -> Option<T>,
 {
@@ -129,7 +129,11 @@ impl Material {
         while let Some(delay) = material_data.delay.pop_front() {
             match delay {
                 delay::DelayCommand::Draw(drawing) => drawing.execute_draw(material_data, material),
-                delay::DelayCommand::Deallocate(mut image) => image.execute_deallocate(),
+                delay::DelayCommand::Deallocate(mut image) => {
+                    if let Some(id) = image.execute_deallocate() {
+                        material_data.remove_atlas(id);
+                    }
+                }
                 delay::DelayCommand::WritePixels((mut image, pixels, region)) => {
                     image.execute_write_pixels(material_data, material, pixels, region)
                 }
@@ -188,5 +192,9 @@ impl MaterialData {
 
     pub(super) fn add_atlas(&mut self, id: renderer::ImageID, backend: backend::Backend) {
         self.atlas_set.insert(id, backend);
+    }
+
+    pub(super) fn remove_atlas(&mut self, id: renderer::ImageID) {
+        self.atlas_set.remove(&id);
     }
 }

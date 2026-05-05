@@ -1,4 +1,4 @@
-use std::{ptr, sync};
+use std::{collections, ptr, sync};
 
 use crate::{renderer, utils};
 
@@ -14,7 +14,7 @@ pub enum ImageType {
 #[derive(Debug)]
 pub(super) struct ImageData {
     pub(super) backend: Option<backend::Backend>,
-    pub(super) node: packing::Tree<packing::PackingData>,
+    pub(super) node: Option<packing::Node>,
 }
 
 unsafe impl Sync for ImageData {}
@@ -63,18 +63,24 @@ impl Image {
         &mut self,
         region: utils::Rectangle,
         source: Option<&'_ Image>,
+        skip_isolate: bool,
     ) -> Option<drawing::Drawing> {
-        if let Some(atlas_id) = source.as_ref().and_then(|source| source.get_atlas_id()) {
-            material::process_material(|material| {
-                material.add_inframe_source(atlas_id);
+        if !skip_isolate {
+            if let Some(atlas_id) = source.as_ref().and_then(|&source| source.get_atlas_id()) {
+                material::process_material(|material| {
+                    material.add_inframe_source(atlas_id);
+                    Option::<()>::None
+                });
+            }
+
+            material::process_material_data(|data, material| {
+                let id = self.isolate(data, material, source);
+                if let Some(id) = id {
+                    data.remove_atlas(id);
+                }
                 Option::<()>::None
             });
         }
-
-        material::process_material_data(|data, material| {
-            self.isolate(data, material, source);
-            Option::<()>::None
-        });
 
         let region = region.add(self.get_atlas_region().min);
         let mut drawing = drawing::Drawing::new(self.clone(), region);
@@ -112,7 +118,7 @@ impl Image {
             if pixels.is_empty() {
                 return;
             }
-            self.allocate(material_data, material, None, true);
+            self.allocate(material_data, material, collections::HashSet::new(), true);
         }
 
         let atlas_region = self.get_atlas_region();
@@ -153,63 +159,86 @@ impl Image {
         material_data: &mut material::MaterialData,
         material: &material::Material,
         source: Option<&Self>,
-    ) {
+    ) -> Option<renderer::ImageID> {
         let (existed, new_image) = self.isolate_from_source_atlas(material_data, material, source);
         if !existed {
-            self.allocate(material_data, material, None, false);
-            return;
+            let old_atlas_id = self.get_atlas_id();
+            let mut forbidden = collections::HashSet::new();
+            if let Some(atlas_id) = old_atlas_id {
+                forbidden.insert(atlas_id);
+            }
+            if let Some(source_atlas_id) = source.and_then(|s| s.get_atlas_id()) {
+                forbidden.insert(source_atlas_id);
+            }
+            material_data.for_each_atlas(|atlas| {
+                let Some(atlas_id) = atlas.get_atlas_id() else {
+                    return true;
+                };
+                if material_data.is_in_frame(atlas_id) {
+                    forbidden.insert(atlas_id);
+                }
+
+                true
+            });
+
+            self.allocate(material_data, material, forbidden, false);
+            if old_atlas_id.is_some() && self.get_atlas_id() != old_atlas_id {
+                return old_atlas_id;
+            }
+            return None;
         }
         if let Some(new_image) = new_image {
-            new_image.move_to(self);
+            return new_image.move_to(self);
         }
+        None
     }
 
     pub(crate) fn deallocate(&mut self) {
-        material::process_material_data(|data, _| {
+        let id = material::process_material_data(|data, _| {
             if !data.in_frame() {
                 data.append_delay(delay::DelayCommand::Deallocate(self.clone()));
-                return Option::<()>::None;
+                return None;
             }
 
-            self.execute_deallocate();
-            Option::<()>::None
+            self.execute_deallocate()
         });
+
+        if let Some(id) = id {
+            material::process_material(|material| {
+                material.del_atlas(id);
+                Option::<()>::None
+            });
+        }
     }
 
-    pub(super) fn execute_deallocate(&mut self) {
+    pub(super) fn execute_deallocate(&mut self) -> Option<renderer::ImageID> {
         let Ok(mut data) = self.data.lock() else {
-            return;
+            return None;
         };
 
-        let Some(backend) = data.backend.take() else {
-            return;
-        };
+        let backend = data.backend.take()?;
 
         if let Some(node) = data.node.take() {
             let region = node.borrow().get_region();
-            // clear
             backend.write_pixels(vec![], region);
 
-            packing::TreeNode::free(&Some(node));
-            return;
+            packing::free(&node);
+            // packing::TreeNode::free(&Some(node));
+            return None;
         }
 
-        let Some(id) = backend.dispose() else {
-            return;
-        };
-        material::process_material(|material| {
-            material.del_atlas(id);
-            Option::<()>::None
-        });
+        backend.dispose()
     }
 
-    fn move_to(self, destination: &mut Self) {
-        destination.execute_deallocate();
+    fn move_to(self, destination: &mut Self) -> Option<renderer::ImageID> {
+        let id = destination.execute_deallocate();
 
         destination.width = self.width;
         destination.height = self.height;
         destination.image_type = self.image_type;
         destination.data = self.data;
+
+        id
     }
 
     fn isolate_from_source_atlas(
@@ -227,12 +256,17 @@ impl Image {
                 return (false, None);
             };
             if data.node.is_none() {
-                return (true, None);
+                if source
+                    .and_then(|source| source.get_atlas_id())
+                    .ne(&Some(atlas_id))
+                {
+                    return (true, None);
+                }
+                return (false, None);
             }
         }
 
         if source
-            .as_ref()
             .and_then(|source| source.get_atlas_id())
             .ne(&Some(atlas_id))
         {
@@ -241,12 +275,26 @@ impl Image {
         let mut new_image = Self::new(self.width, self.height, self.image_type);
         // let region =
         //     Self::atlas_region_width_padding(self.width, self.height, self.image_type, &self.node);
-        new_image.allocate(material_data, material, Some(atlas_id), false);
+
+        let mut forbidden = collections::HashSet::new();
+        forbidden.insert(atlas_id);
+        material_data.for_each_atlas(|atlas| {
+            let Some(atlas_id) = atlas.get_atlas_id() else {
+                return true;
+            };
+            if material_data.is_in_frame(atlas_id) {
+                forbidden.insert(atlas_id);
+            }
+
+            true
+        });
+
+        new_image.allocate(material_data, material, forbidden, false);
 
         let destination_region = utils::Rectangle::new(0, 0, self.width, self.height);
         // let source_region = utils::Rectangle::new(0, 0, self.width, self.height);
 
-        if let Some(mut drawing) = new_image.draw(destination_region, Some(self)) {
+        if let Some(mut drawing) = new_image.draw(destination_region, Some(self), true) {
             drawing.dst_src(drawing::AtlasDrawingQuadDstSrc::new(
                 (0., 0., self.width as f32, self.height as f32),
                 (0., 0., self.width as f32, self.height as f32),
@@ -268,14 +316,19 @@ impl Image {
         let Ok(data) = self.data.lock() else {
             return utils::Rectangle::new(0, 0, 0, 0);
         };
-        Self::atlas_region_width_padding(self.width, self.height, self.image_type, &data.node)
+        Self::atlas_region_width_padding(
+            self.width,
+            self.height,
+            self.image_type,
+            data.node.as_ref(),
+        )
     }
 
     fn allocate(
         &mut self,
         material_data: &mut material::MaterialData,
         material: &material::Material,
-        forbidden_atlas_id: Option<renderer::ImageID>,
+        forbidden_atlas_id: collections::HashSet<renderer::ImageID>,
         as_source: bool,
     ) {
         if matches!(self.image_type, ImageType::Screen) {
@@ -290,6 +343,7 @@ impl Image {
                 false,
                 true,
                 true,
+                false,
             );
             return;
         }
@@ -314,6 +368,7 @@ impl Image {
                 as_source && matches!(self.image_type, ImageType::Regular),
                 false,
                 true,
+                false,
             );
             return;
         }
@@ -321,23 +376,24 @@ impl Image {
         // regular, a part of material
         let mut finded = false;
         material_data.for_each_atlas(|backend| {
-            let Some(node) = backend.alloc_node(material.get_renderer(), width, height, |backend| {
-                if backend.get_source() != as_source {
-                    return false;
-                }
-                let atlas_id = backend.get_image().get_id();
-                if material_data.is_in_frame(atlas_id) {
-                    return false;
-                }
-                if matches!(forbidden_atlas_id, Some(forbidden_atlas_id) if forbidden_atlas_id == atlas_id) {
-                    return false;
-                }
+            let Some(node) =
+                backend.alloc_node(material.get_renderer(), width, height, |backend| {
+                    if backend.get_source() != as_source {
+                        return false;
+                    }
+                    let atlas_id = backend.get_image().get_id();
+                    if material_data.is_in_frame(atlas_id) {
+                        return false;
+                    }
+                    if forbidden_atlas_id.contains(&atlas_id) {
+                        return false;
+                    }
 
-                true
-            }) else {
+                    true
+                })
+            else {
                 return true; // continue for_each atlas
             };
-
 
             let Ok(mut data) = self.data.lock() else {
                 return false;
@@ -373,7 +429,7 @@ impl Image {
         }
         // regular, a part of material, but create new material
         if let Some(backend) =
-            backend::Backend::new(material_data, material, w, h, as_source, false, false)
+            backend::Backend::new(material_data, material, w, h, as_source, false, false, true)
         {
             let Ok(mut data) = self.data.lock() else {
                 return;
@@ -387,7 +443,7 @@ impl Image {
         width: i32,
         height: i32,
         image_type: ImageType,
-        node: &packing::Tree<packing::PackingData>,
+        node: Option<&packing::Node>,
     ) -> utils::Rectangle {
         if let Some(node) = node.as_ref() {
             node.borrow().get_region()

@@ -66,7 +66,7 @@ impl Image {
     }
 
     pub fn clear(&self) {
-        self.fill((0., 0., 0., 0.));
+        self.fill((0., 0., 0., 1.));
     }
 
     pub fn fill(&self, rgba: (f32, f32, f32, f32)) {
@@ -145,8 +145,9 @@ impl Image {
     const fn adjust_bounds(&self) -> utils::Rectangle {
         let b = self.bound;
         let (x, y) = self.adjust_position(b.min.x, b.min.y);
+        let (width, height) = b.get_size();
 
-        utils::Rectangle::new_pos(x, y, x + b.get_width(), y + b.get_height())
+        utils::Rectangle::new(x, y, width, height)
     }
 
     pub const fn bounds(&self) -> utils::Rectangle {

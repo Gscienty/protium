@@ -24,6 +24,7 @@ impl Backend {
         source: bool,
         screen: bool,
         need_clear: bool,
+        is_atlas: bool,
     ) -> Option<Self> {
         let image = material.get_renderer().create_image(width, height, screen);
 
@@ -51,6 +52,7 @@ impl Backend {
         }
 
         let id = image.get_id();
+        #[allow(clippy::arc_with_non_send_sync)]
         let backend = Self(sync::Arc::new(sync::Mutex::new(BackendData {
             page: packing::Page::new(
                 width,
@@ -62,7 +64,9 @@ impl Backend {
             screen,
         })));
 
-        material_data.add_atlas(id, backend.clone());
+        if is_atlas {
+            material_data.add_atlas(id, backend.clone());
+        }
 
         Some(backend)
     }
@@ -160,7 +164,7 @@ impl Backend {
         width: i32,
         height: i32,
         checker: F,
-    ) -> packing::Tree<packing::PackingData>
+    ) -> Option<packing::Node>
     where
         F: FnOnce(&BackendData) -> bool,
     {
@@ -189,7 +193,7 @@ impl BackendData {
         renderer: &renderer::Renderer,
         width: i32,
         height: i32,
-    ) -> packing::Tree<packing::PackingData> {
+    ) -> Option<packing::Node> {
         let node = self.page.alloc(width, height)?;
 
         let (page_width, page_height) = self.page.size();
@@ -241,7 +245,7 @@ impl BackendData {
                 .collect()
             })
             .append_indexes(vec![0, 1, 2, 1, 2, 3])
-            .set_blend(renderer::BLEND_CLEAR)
+            .set_blend(renderer::BLEND_COPY)
             .set_fill_rule(renderer::FillRule::FillAll)
             .set_uniforms(utils::builtin_shader::get_nearest_uniform(
                 new_image.get_internal_size(),
