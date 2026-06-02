@@ -11,8 +11,8 @@ impl DstRegion {
         Self { region, count }
     }
 
-    pub(crate) fn get_region(&self) -> &utils::Rectangle {
-        &self.region
+    pub(crate) fn get_region(&self) -> utils::Rectangle {
+        self.region
     }
 
     pub(crate) fn add_count(&mut self, count: i32) {

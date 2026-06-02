@@ -56,11 +56,15 @@ impl CommandProcssor {
     async fn run(&mut self) {
         while let Some(cmd) = self.receiver.recv().await {
             match cmd {
-                command::Command::DrawTriangles(cmd) => {
+                command::Command::Draw(cmd) => {
                     let Some((_, layout)) = self.shaders.get(&cmd.get_shader()) else {
                         continue;
                     };
-                    self.command_pool.enqueue_draw_triangles(layout, cmd);
+                    for &source in self.images.keys() {
+                        self.command_pool.flush_write_pixels(source);
+                    }
+                    self.command_pool
+                        .enqueue_draw_triangles(&self.images, layout, cmd);
                 }
                 command::Command::WritexPixels(cmd) => {
                     self.command_pool.enqueue_write_pixels(cmd);

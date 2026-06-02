@@ -1,3 +1,5 @@
+use std::sync;
+
 use crate::renderer;
 
 #[derive(Debug)]
@@ -6,7 +8,7 @@ pub(crate) struct CreateShader {
     vertex_source: String,
     fragment_source: String,
     vertex_layout: renderer::driver::GLVertexLayout,
-    uniforms: Vec<(String, renderer::driver::ShaderType)>,
+    uniforms: sync::Arc<[(String, renderer::driver::ShaderType)]>,
     texels: bool,
 }
 
@@ -16,7 +18,7 @@ impl CreateShader {
         vertex_source: String,
         fragment_source: String,
         vertex_layout: renderer::driver::GLVertexLayout,
-        uniforms: Vec<(String, renderer::driver::ShaderType)>,
+        uniforms: sync::Arc<[(String, renderer::driver::ShaderType)]>,
         texels: bool,
     ) -> Self {
         Self {

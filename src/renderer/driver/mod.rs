@@ -28,7 +28,7 @@ pub use color_space::ColorSpace;
 pub use blend::{BLEND_CLEAR, BLEND_COPY, BLEND_DEFAULT, BLEND_SOURCE_OVER, Blend};
 pub(super) use dst_region::DstRegion;
 pub use fill_rule::FillRule;
-pub use glprogram::{GLVertexEntity, GLVertexLayout, GLVertexLayoutPart};
+pub use glprogram::{GLVertexLayout, GLVertexLayoutPart};
 pub(super) use graphics::Graphics;
 pub(crate) use image::Image;
 pub(crate) use pixels_args::PixelsArgs;

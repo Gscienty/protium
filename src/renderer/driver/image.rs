@@ -1,4 +1,4 @@
-use std::cell::Cell;
+use std::{cell::Cell, sync};
 
 use crate::utils;
 
@@ -61,16 +61,15 @@ impl Image {
         &self,
         graphics: &graphics::Graphics,
         args: impl Iterator<Item = &'a utils::Rectangle>,
-    ) -> Result<Vec<Vec<u8>>, ()> {
+    ) -> Result<Vec<sync::Arc<[u8]>>, ()> {
         let framebuffer = self.ensure_framebuffer(graphics)?;
 
         let result = args
             .map(|region| {
-                graphics.get_context().framebuffer_pixels(
-                    graphics.get_handler(),
-                    framebuffer,
-                    region,
-                )
+                graphics
+                    .get_context()
+                    .framebuffer_pixels(graphics.get_handler(), framebuffer, region)
+                    .into()
             })
             .collect();
 

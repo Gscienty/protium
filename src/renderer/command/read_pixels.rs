@@ -1,3 +1,5 @@
+use std::sync;
+
 use tokio::sync::mpsc;
 
 use crate::{renderer, utils};
@@ -6,7 +8,7 @@ use crate::{renderer, utils};
 pub(crate) struct ReadPixels {
     id: renderer::ImageID,
     regions: Vec<utils::Rectangle>,
-    pixels_sender: mpsc::UnboundedSender<Vec<Vec<u8>>>,
+    pixels_sender: mpsc::UnboundedSender<Vec<sync::Arc<[u8]>>>,
 }
 
 impl ReadPixels {
@@ -14,7 +16,7 @@ impl ReadPixels {
         self.id
     }
 
-    pub(crate) fn send(&self, data: Vec<Vec<u8>>) {
+    pub(crate) fn send(&self, data: Vec<sync::Arc<[u8]>>) {
         let _ = self.pixels_sender.send(data);
     }
 

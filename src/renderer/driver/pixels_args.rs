@@ -1,12 +1,14 @@
+use std::sync;
+
 use crate::utils;
 
 pub(crate) struct PixelsArgs {
-    pixels: Vec<u8>,
+    pixels: sync::Arc<[u8]>,
     region: utils::Rectangle,
 }
 
 impl PixelsArgs {
-    pub(crate) fn new(region: utils::Rectangle, pixels: Vec<u8>) -> Self {
+    pub(crate) fn new(region: utils::Rectangle, pixels: sync::Arc<[u8]>) -> Self {
         Self { pixels, region }
     }
 

@@ -2,8 +2,6 @@ use std::sync;
 
 use crate::{atlas, renderer, utils};
 
-use super::drawing;
-
 pub(crate) struct Image {
     image: atlas::Image,
     modify_callback: Option<Box<dyn Fn()>>,
@@ -30,33 +28,39 @@ impl Image {
         self.image.get_size()
     }
 
-    pub(crate) fn draw(
-        &mut self,
-        region: utils::Rectangle,
-        source: Option<&'_ Image>,
-        blend: renderer::Blend,
-    ) -> Option<drawing::Drawing> {
-        self.last_blend = blend;
-        self.draw_internal(region, source, blend)
+    pub(crate) fn into_draw_source_arg(
+        &self,
+        name: &str,
+        source_region: utils::Rectangle,
+    ) -> atlas::DrawSourceArg {
+        atlas::DrawSourceArg::from(&self.image, name, source_region)
     }
 
-    pub(super) fn draw_internal(
+    pub(crate) fn draw(
         &mut self,
-        region: utils::Rectangle,
-        source: Option<&'_ Image>,
+        sources: Vec<atlas::DrawSourceArg>,
+        vertices: Vec<f32>,
+        indexes: sync::Arc<[u32]>,
         blend: renderer::Blend,
-    ) -> Option<drawing::Drawing> {
-        let mut drawing = self
-            .image
-            .draw(region, source.map(|image| &image.image), false)?;
-        drawing.set_blend(blend);
+        destination_region: utils::Rectangle,
+        shader_id: renderer::ShaderID,
+        uniforms: sync::Arc<[u8]>,
+        fill_rule: renderer::FillRule,
+    ) {
         if let Some(cb) = self.modify_callback.as_ref() {
             cb();
         }
-        Some(drawing::Drawing::new(
-            drawing,
-            //self.modify_callback.take(),
-        ))
+        self.last_blend = blend;
+        self.image.draw(
+            sources,
+            vertices,
+            indexes,
+            blend,
+            destination_region,
+            shader_id,
+            uniforms,
+            fill_rule,
+        );
     }
 
     pub(crate) fn clear(&mut self) {
@@ -73,38 +77,41 @@ impl Image {
             cb();
         }
 
-        let Some(mut drawing) = self
-            .image
-            .draw(destination_region, Some(get_white_image()), false)
-        else {
-            return;
-        };
-        drawing.dst_src(atlas::AtlasDrawingQuadDstSrc::new(
-            (
-                0.,
-                0.,
-                destination_region.get_width() as f32,
-                destination_region.get_height() as f32,
-            ),
-            (1., 1., 2., 2.),
-            [rgba; 4],
-        ));
-        drawing.set_blend(
-            if rgba.3 == 1. && matches!(self.last_blend, renderer::BLEND_SOURCE_OVER) {
+        let source = atlas::DrawSourceArg::from(
+            get_white_image(),
+            "source",
+            utils::Rectangle::new(0, 0, 3, 3),
+        );
+        let (w, h) = self.get_size();
+        let vertices = utils::builtin_shader::nearest_quad_vertices_from_src_atlas(
+            1., 1., 2., 2., w as f32, 0., 0., h as f32, 0., 0., rgba.0, rgba.1, rgba.2, rgba.3,
+        );
+        let shader_id = atlas::process_material(|material| {
+            Some(utils::builtin_shader::get_nearest_shader(material.get_renderer()).get_id())
+        })
+        .unwrap_or(0);
+
+        self.image.draw(
+            [source].into(),
+            vertices.to_vec(),
+            [0, 1, 2, 1, 2, 3].into(),
+            if rgba.3 == 1. && self.last_blend == renderer::BLEND_SOURCE_OVER {
                 renderer::BLEND_SOURCE_OVER
             } else {
                 renderer::BLEND_COPY
             },
+            destination_region,
+            shader_id,
+            [].into(),
+            renderer::FillRule::FillAll,
         );
-        drawing.set_fill_rule(renderer::FillRule::FillAll);
-        drawing.draw();
     }
 
     pub(crate) fn deallocate(&mut self) {
         self.image.deallocate();
     }
 
-    pub(crate) fn write_pixels(&mut self, pixels: Vec<u8>, region: utils::Rectangle) {
+    pub(crate) fn write_pixels(&mut self, pixels: sync::Arc<[u8]>, region: utils::Rectangle) {
         if let Some(cb) = self.modify_callback.as_ref() {
             cb();
         }
@@ -117,7 +124,7 @@ static WHITE_IMAGE: sync::OnceLock<atlas::Image> = sync::OnceLock::new();
 pub(crate) fn get_white_image() -> &'static atlas::Image {
     WHITE_IMAGE.get_or_init(|| {
         let mut image = atlas::Image::new(3, 3, atlas::ImageType::Regular);
-        image.write_pixels([0xff].repeat(4 * 3 * 3), utils::Rectangle::new(0, 0, 3, 3));
+        image.write_pixels([0xff; 4 * 3 * 3].into(), utils::Rectangle::new(0, 0, 3, 3));
 
         image
     })

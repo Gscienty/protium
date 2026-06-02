@@ -6,15 +6,17 @@ mod write_pixels;
 
 pub(super) use create_image::CreateImage;
 pub(super) use create_shader::CreateShader;
-pub(super) use draw_triangles::{DrawTriangleSourceArg, DrawTriangles, InternalDrawTriangles};
+pub(super) use draw_triangles::{Draw, InternalDrawTriangles};
 pub(super) use read_pixels::ReadPixels;
 pub(super) use write_pixels::{InternalWritePixels, WritePixels, WritePixelsArg};
+
+pub(crate) use draw_triangles::DrawSourceArg;
 
 #[derive(Debug)]
 pub(super) enum Command {
     CreateImage(CreateImage),
     DisposeImage(super::ImageID),
-    DrawTriangles(DrawTriangles),
+    Draw(Draw),
     WritexPixels(WritePixels),
     ReadPixels(ReadPixels),
 

@@ -1,8 +1,10 @@
+use std::sync;
+
 use tokio::sync::mpsc;
 
-use crate::utils;
+use crate::{renderer, utils};
 
-use super::{ImageID, command, drawing, driver, shader};
+use super::{ImageID, command, driver};
 
 #[derive(Debug)]
 pub(crate) struct Image {
@@ -44,12 +46,16 @@ impl Image {
         }
     }
 
-    pub(crate) fn get_id(&self) -> ImageID {
-        self.id
+    pub(crate) fn is_screen(&self) -> bool {
+        self.screen
     }
 
     pub(crate) fn dispose(&self) {
         let _ = self.sender.send(command::Command::DisposeImage(self.id));
+    }
+
+    pub(crate) fn get_id(&self) -> ImageID {
+        self.id
     }
 
     pub(crate) const fn get_internal_size(&self) -> (i32, i32) {
@@ -60,15 +66,32 @@ impl Image {
         (self.width, self.height)
     }
 
-    pub(crate) fn drawing(
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn draw(
         &self,
-        region: utils::Rectangle,
-        shader: &shader::Shader,
-    ) -> drawing::Drawing {
-        drawing::Drawing::new(self.id, region, shader.get_id(), self.sender.clone())
+        sources: sync::Arc<[command::DrawSourceArg]>,
+        vertices: sync::Arc<[f32]>,
+        indexes: sync::Arc<[u32]>,
+        blend: renderer::driver::Blend,
+        destination_region: utils::Rectangle,
+        shader: renderer::ShaderID,
+        uniforms: sync::Arc<[u8]>,
+        fill_rule: renderer::driver::FillRule,
+    ) {
+        let _ = self.sender.send(command::Command::Draw(command::Draw::new(
+            self.id,
+            sources,
+            vertices,
+            indexes,
+            blend,
+            destination_region,
+            shader,
+            uniforms,
+            fill_rule,
+        )));
     }
 
-    pub(crate) fn write_pixels(&self, pixels: Vec<u8>, region: utils::Rectangle) {
+    pub(crate) fn write_pixels(&self, pixels: sync::Arc<[u8]>, region: utils::Rectangle) {
         let _ = self
             .sender
             .send(command::Command::WritexPixels(command::WritePixels::new(

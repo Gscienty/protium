@@ -1,5 +1,5 @@
 use super::{BufferID, ProgramID, VertexArrayID, glhandler};
-use std::{cell, collections};
+use std::{cell, collections, sync};
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct GLVertexLayoutPart {
@@ -17,7 +17,7 @@ impl GLVertexLayoutPart {
 }
 
 pub trait GLVertexEntity {
-    fn layout() -> Vec<GLVertexLayoutPart>;
+    fn layout() -> sync::Arc<[GLVertexLayoutPart]>;
 
     fn vertex_array(&self, target: &mut [u8]);
 
@@ -26,7 +26,7 @@ pub trait GLVertexEntity {
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct GLVertexLayout {
-    parts: Vec<GLVertexLayoutPart>,
+    parts: sync::Arc<[GLVertexLayoutPart]>,
     size: usize,
 }
 
@@ -38,7 +38,7 @@ impl GLVertexLayout {
         Self::new_with_parts(T::layout())
     }
 
-    pub fn new_with_parts(parts: Vec<GLVertexLayoutPart>) -> Self {
+    pub fn new_with_parts(parts: sync::Arc<[GLVertexLayoutPart]>) -> Self {
         let size = parts.iter().fold(0, |acc, part| acc + part.size);
 
         Self { parts, size }
@@ -193,8 +193,8 @@ impl ProgramState {
         &self,
         hdr: &glhandler::GLHandler,
         layout: &GLVertexLayout,
-        vertices: &[u8],
-        indexes: &[u8],
+        vertices: &[f32],
+        indexes: &[u32],
     ) {
         let Ok(mut data) = self.data.try_borrow_mut() else {
             return;
@@ -209,11 +209,12 @@ impl ProgramState {
         }
         hdr.bind_vertex_array(data.vertex_array);
 
-        if data.array_buffer_bytes_size < vertices.len() {
+        let vertices_size = std::mem::size_of_val(vertices);
+        if data.array_buffer_bytes_size < vertices_size {
             if data.array_buffer != 0 {
                 hdr.delete_buffer(data.array_buffer);
             }
-            let vertices_size = Self::pow2(vertices.len());
+            let vertices_size = Self::pow2(vertices_size);
 
             let Some(array_buffer) = hdr.create_buffer() else {
                 return;
@@ -226,25 +227,29 @@ impl ProgramState {
             );
             data.array_buffer = array_buffer;
             data.array_buffer_bytes_size = vertices_size;
-        }
-        if let Some(original_layout) = data.layout.as_ref() {
-            if original_layout.ne(layout) {
-                original_layout.disable(hdr);
 
+            if let Some(original_layout) = data.layout.as_ref() {
+                if original_layout.eq(layout) {
+                    original_layout.enable(hdr);
+                } else {
+                    original_layout.disable(hdr);
+
+                    layout.enable(hdr);
+                    data.layout.replace(layout.clone());
+                }
+            } else {
                 layout.enable(hdr);
                 data.layout.replace(layout.clone());
             }
-        } else {
-            layout.enable(hdr);
-            data.layout.replace(layout.clone());
         }
 
         // 适配 element array
-        if data.element_array_buffer_bytes_size < indexes.len() {
+        let indexes_size = std::mem::size_of_val(indexes);
+        if data.element_array_buffer_bytes_size < indexes_size {
             if data.element_array_buffer != 0 {
                 hdr.delete_buffer(data.element_array_buffer);
             }
-            let indexes_size = Self::pow2(indexes.len());
+            let indexes_size = Self::pow2(indexes_size);
 
             let Some(element_array_buffer) = hdr.create_buffer() else {
                 return;
@@ -262,11 +267,15 @@ impl ProgramState {
             data.element_array_buffer_bytes_size = indexes_size;
         }
 
-        hdr.buffer_sub_data(web_sys::WebGl2RenderingContext::ARRAY_BUFFER, 0, vertices);
+        hdr.buffer_sub_data(web_sys::WebGl2RenderingContext::ARRAY_BUFFER, 0, unsafe {
+            &*std::ptr::slice_from_raw_parts(vertices.as_ptr() as *const u8, vertices_size)
+        });
         hdr.buffer_sub_data(
             web_sys::WebGl2RenderingContext::ELEMENT_ARRAY_BUFFER,
             0,
-            indexes,
+            unsafe {
+                &*std::ptr::slice_from_raw_parts(indexes.as_ptr() as *const u8, indexes_size)
+            },
         );
     }
 

@@ -1,261 +1,212 @@
-use std::sync;
+use std::{cell, rc, sync};
 
-use crate::{renderer, utils};
-
-use super::{material, packing};
+use crate::{
+    atlas::{image, packing},
+    renderer::{self, command},
+    utils,
+};
 
 #[derive(Debug)]
-pub(super) struct BackendData {
-    page: packing::Page,
+pub(crate) struct BackendData {
+    page: Option<rc::Rc<cell::RefCell<packing::Page>>>,
     image: renderer::Image,
     source: bool,
-    screen: bool,
 }
 
-#[derive(Clone, Debug)]
-pub(super) struct Backend(sync::Arc<sync::Mutex<BackendData>>);
-
-impl Backend {
-    pub(super) fn new(
-        material_data: &mut material::MaterialData,
-        material: &material::Material,
-        width: i32,
-        height: i32,
-        source: bool,
-        screen: bool,
-        need_clear: bool,
-        is_atlas: bool,
-    ) -> Option<Self> {
-        let image = material.get_renderer().create_image(width, height, screen);
-
-        if need_clear {
-            image
-                .drawing(
-                    utils::Rectangle::new(0, 0, width, height),
-                    utils::builtin_shader::get_clear_shader(material.get_renderer()),
-                )
-                .append_vertexes({
-                    let width = width as f32;
-                    let height = height as f32;
-                    vec![0., 0., width, 0., 0., height, width, height]
-                        .into_iter()
-                        .flat_map(|v| v.to_ne_bytes())
-                        .collect()
-                })
-                .append_indexes(vec![0, 1, 2, 1, 2, 3])
-                .set_blend(renderer::BLEND_CLEAR)
-                .set_fill_rule(renderer::FillRule::FillAll)
-                .set_uniforms(utils::builtin_shader::get_clear_uniform(
-                    image.get_internal_size(),
-                ))
-                .draw();
-        }
-
-        let id = image.get_id();
-        #[allow(clippy::arc_with_non_send_sync)]
-        let backend = Self(sync::Arc::new(sync::Mutex::new(BackendData {
-            page: packing::Page::new(
-                width,
-                height,
-                material.get_renderer().get_max_texture_size(),
-            ),
-            image,
-            source,
-            screen,
-        })));
-
-        if is_atlas {
-            material_data.add_atlas(id, backend.clone());
-        }
-
-        Some(backend)
-    }
-
-    pub(super) fn write_pixels(&self, pixels: Vec<u8>, region: utils::Rectangle) {
-        let Ok(data) = self.0.lock() else {
-            return;
-        };
-        let (width, height) = data.get_image().get_size();
-        if !region.is_in(&utils::Rectangle::new(0, 0, width, height)) {
-            return;
-        }
-
-        material::process_material(|material| {
-            if pixels.is_empty() {
-                data.get_image()
-                    .drawing(
-                        region,
-                        utils::builtin_shader::get_clear_shader(material.get_renderer()),
-                    )
-                    .append_vertexes({
-                        let min_x = region.min.x as f32;
-                        let min_y = region.min.y as f32;
-                        let max_x = region.max.x as f32;
-                        let max_y = region.max.y as f32;
-
-                        vec![min_x, min_y, max_x, min_y, min_x, max_y, max_x, max_y]
-                            .into_iter()
-                            .flat_map(|v| v.to_ne_bytes())
-                            .collect()
-                    })
-                    .append_indexes(vec![0, 1, 2, 1, 2, 3])
-                    .set_blend(renderer::BLEND_CLEAR)
-                    .set_fill_rule(renderer::FillRule::FillAll)
-                    .set_uniforms(utils::builtin_shader::get_clear_uniform(
-                        data.get_image().get_internal_size(),
-                    ))
-                    .draw();
-            } else {
-                data.image.write_pixels(pixels, region);
-            }
-
-            Option::<()>::None
-        });
-    }
-
-    pub(super) fn dispose(&self) -> Option<renderer::ImageID> {
-        let Ok(data) = self.0.lock() else {
-            return None;
-        };
-        data.get_image().dispose();
-
-        Some(data.get_image().get_id())
-    }
-
-    pub(super) fn draw(
-        &self,
-        region: utils::Rectangle,
-        shader: &renderer::Shader,
-    ) -> Option<renderer::Drawing> {
-        let Ok(data) = self.0.lock() else {
-            return None;
-        };
-
-        Some(data.get_image().drawing(region, shader))
-    }
-
-    pub(super) fn get_atlas_id(&self) -> Option<renderer::ImageID> {
-        let Ok(data) = self.0.lock() else {
-            return None;
-        };
-
-        Some(data.get_image().get_id())
-    }
-
-    pub(super) fn get_image_internal_size(&self) -> (i32, i32) {
-        let Ok(data) = self.0.lock() else {
-            return (0, 0);
-        };
-
-        data.get_image().get_internal_size()
-    }
-
-    pub(super) fn get_image_size(&self) -> (i32, i32) {
-        let Ok(data) = self.0.lock() else {
-            return (0, 0);
-        };
-
-        data.get_image().get_size()
-    }
-
-    pub(super) fn alloc_node<F>(
-        &self,
-        renderer: &renderer::Renderer,
-        width: i32,
-        height: i32,
-        checker: F,
-    ) -> Option<packing::Node>
-    where
-        F: FnOnce(&BackendData) -> bool,
-    {
-        let Ok(mut data) = self.0.lock() else {
-            return None;
-        };
-        if !checker(&data) {
-            return None;
-        }
-
-        data.alloc_node(renderer, width, height)
-    }
+#[derive(Debug, Clone)]
+pub struct Backend {
+    image_id: renderer::ImageID,
+    pub(crate) data: rc::Rc<tokio::sync::RwLock<BackendData>>,
 }
 
 impl BackendData {
-    pub(super) fn get_image(&self) -> &renderer::Image {
-        &self.image
-    }
-
     pub(super) fn get_source(&self) -> bool {
         self.source
     }
 
-    pub(super) fn alloc_node(
+    pub(super) fn get_atlas_id(&self) -> renderer::ImageID {
+        self.image.get_id()
+    }
+
+    pub(super) fn allocate_node(
         &mut self,
         renderer: &renderer::Renderer,
         width: i32,
         height: i32,
     ) -> Option<packing::Node> {
-        let node = self.page.alloc(width, height)?;
+        let page = self.page.as_ref()?;
+        let node = page.borrow_mut().alloc(width, height)?;
 
-        let (page_width, page_height) = self.page.size();
-        let (origin_image_width, origin_image_height) = self.image.get_internal_size();
-        if page_width <= origin_image_width && page_height <= origin_image_height {
-            return Some(node);
-        }
-
-        let new_image = renderer.create_image(page_width, page_height, self.screen);
-
-        // clear
-        new_image
-            .drawing(
-                utils::Rectangle::new(0, 0, page_width, page_height),
-                utils::builtin_shader::get_clear_shader(renderer),
-            )
-            .append_vertexes({
-                let width = page_width as f32;
-                let height = page_height as f32;
-                vec![0., 0., width, 0., 0., height, width, height]
-                    .into_iter()
-                    .flat_map(|v| v.to_ne_bytes())
-                    .collect()
-            })
-            .append_indexes(vec![0, 1, 2, 1, 2, 3])
-            .set_blend(renderer::BLEND_CLEAR)
-            .set_fill_rule(renderer::FillRule::FillAll)
-            .set_uniforms(utils::builtin_shader::get_clear_uniform(
-                new_image.get_internal_size(),
-            ))
-            .draw();
-
-        new_image
-            .drawing(
-                utils::Rectangle::new(0, 0, origin_image_width, origin_image_height),
-                utils::builtin_shader::get_nearest_shader(renderer),
-            )
-            .set_source("source", self.image.get_id())
-            .append_vertexes({
-                let width = origin_image_width as f32;
-                let height = origin_image_height as f32;
-                vec![
-                    0., 0., 0., 0., 1., 1., 1., 1., width, 0., width, 0., 1., 1., 1., 1., 0.,
-                    height, 0., height, 1., 1., 1., 1., width, height, width, height, 1., 1., 1.,
-                    1.,
-                ]
-                .into_iter()
-                .flat_map(|v| v.to_ne_bytes())
-                .collect()
-            })
-            .append_indexes(vec![0, 1, 2, 1, 2, 3])
-            .set_blend(renderer::BLEND_COPY)
-            .set_fill_rule(renderer::FillRule::FillAll)
-            .set_uniforms(utils::builtin_shader::get_nearest_uniform(
-                new_image.get_internal_size(),
-                self.image.get_internal_size(),
-            ))
-            .draw();
-
-        self.image.dispose();
-        self.image = new_image;
+        let (width, height) = page.borrow().size();
+        self.extend(renderer, width, height);
 
         Some(node)
+    }
+
+    fn extend(&mut self, renderer: &renderer::Renderer, width: i32, height: i32) {
+        let (image_width, image_height) = self.image.get_size();
+        if image_width >= width && image_height >= height {
+            return;
+        }
+
+        let new_image = renderer.create_image(width, height, self.image.is_screen());
+        let (width, height) = new_image.get_internal_size();
+
+        let vertices = utils::builtin_shader::nearest_quad_vertices_from_dst_src(
+            0.,
+            0.,
+            width as f32,
+            height as f32,
+            0.,
+            0.,
+            width as f32,
+            height as f32,
+            1.,
+            1.,
+            1.,
+            1.,
+        );
+        new_image.draw(
+            [command::DrawSourceArg::new(
+                "source".into(),
+                self.image.get_id(),
+            )]
+            .into(),
+            vertices,
+            [0, 1, 2, 1, 2, 3].into(),
+            renderer::BLEND_COPY,
+            utils::Rectangle::new(0, 0, width, height),
+            utils::builtin_shader::get_nearest_shader(renderer).get_id(),
+            [].into(),
+            renderer::FillRule::FillAll,
+        );
+        self.image.dispose();
+
+        self.image = new_image;
+    }
+
+    pub(super) fn write_pixels(&self, pixels: sync::Arc<[u8]>, region: utils::Rectangle) {
+        self.image.write_pixels(pixels, region);
+    }
+
+    pub(super) fn clear_pixels(&self, renderer: &renderer::Renderer, region: utils::Rectangle) {
+        let (width, height) = self.image.get_size();
+
+        if !region.is_in(&utils::Rectangle::new(0, 0, width, height)) {
+            return;
+        }
+
+        self.image.draw(
+            [].into(),
+            utils::builtin_shader::clear_quad_vertices_from_dst_src(
+                region.min.x as f32,
+                region.min.y as f32,
+                region.max.x as f32,
+                region.max.y as f32,
+            ),
+            [0, 1, 2, 1, 2, 3].into(),
+            renderer::BLEND_CLEAR,
+            region,
+            utils::builtin_shader::get_clear_shader(renderer).get_id(),
+            [].into(),
+            renderer::FillRule::FillAll,
+        );
+    }
+
+    pub(super) fn draw(
+        &self,
+        sources: sync::Arc<[command::DrawSourceArg]>,
+        vertices: sync::Arc<[f32]>,
+        indexes: sync::Arc<[u32]>,
+        blend: renderer::Blend,
+        destination_region: utils::Rectangle,
+        shader: renderer::ShaderID,
+        uniforms: sync::Arc<[u8]>,
+        fill_rule: renderer::FillRule,
+    ) {
+        self.image.draw(
+            sources,
+            vertices,
+            indexes,
+            blend,
+            destination_region,
+            shader,
+            uniforms,
+            fill_rule,
+        );
+    }
+
+    pub(super) fn dispose(&self) -> renderer::ImageID {
+        self.image.dispose();
+
+        self.image.get_id()
+    }
+}
+
+impl Backend {
+    pub(super) fn new(
+        image: renderer::Image,
+        page: Option<rc::Rc<cell::RefCell<packing::Page>>>,
+        source: bool,
+    ) -> Self {
+        Self {
+            image_id: image.get_id(),
+            data: rc::Rc::new(tokio::sync::RwLock::new(BackendData {
+                page,
+                image,
+                source,
+            })),
+        }
+    }
+
+    pub(super) fn get_id(&self) -> renderer::ImageID {
+        self.image_id
+    }
+
+    pub(super) fn clear_pixels(&self, renderer: &renderer::Renderer, region: utils::Rectangle) {
+        let data = self.data.blocking_read();
+        data.clear_pixels(renderer, region);
+    }
+
+    pub(super) fn write_pixels(&self, pixels: sync::Arc<[u8]>, region: utils::Rectangle) {
+        let data = self.data.blocking_read();
+        data.write_pixels(pixels, region);
+    }
+
+    pub(super) fn draw(
+        &self,
+        sources: sync::Arc<[image::DrawSourceArg]>,
+        vertices: sync::Arc<[f32]>,
+        indexes: sync::Arc<[u32]>,
+        blend: renderer::Blend,
+        destination_region: utils::Rectangle,
+        shader: renderer::ShaderID,
+        uniforms: sync::Arc<[u8]>,
+        fill_rule: renderer::FillRule,
+    ) {
+        let data = self.data.blocking_read();
+
+        data.draw(
+            sources
+                .into_iter()
+                .filter_map(|source| {
+                    let image_id = source.get_image_id()?;
+                    Some(command::DrawSourceArg::new(source.get_name(), image_id))
+                })
+                .collect(),
+            vertices,
+            indexes,
+            blend,
+            destination_region,
+            shader,
+            uniforms,
+            fill_rule,
+        );
+    }
+
+    pub(super) fn dispose(&self) -> renderer::ImageID {
+        let data = self.data.blocking_read();
+
+        data.dispose()
     }
 }

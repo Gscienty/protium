@@ -12,7 +12,7 @@ impl Shader {
         Self { id, sender }
     }
 
-    pub(super) const fn get_id(&self) -> ShaderID {
+    pub(crate) const fn get_id(&self) -> ShaderID {
         self.id
     }
 

@@ -72,8 +72,8 @@ impl Graphics {
     pub(crate) fn set_vertices(
         &self,
         layout: &glprogram::GLVertexLayout,
-        vertices: &[u8],
-        indexes: &[u8],
+        vertices: &[f32],
+        indexes: &[u32],
     ) {
         self.program_state
             .set_vertices(&self.handler, layout, vertices, indexes);

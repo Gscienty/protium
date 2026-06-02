@@ -52,17 +52,29 @@ impl Image {
             return;
         };
 
-        let Some(mut drawing) = target.draw(self.adjust_bounds(), source.as_ref(), blend) else {
-            return;
-        };
-        drawing.set_fill_rule(option.fill_rule);
-        drawing.quad_src_material(atlas::AtlasDrawingQuadSrcMaterial::new(
-            (sx0 as f32, sy0 as f32, sx1 as f32, sy1 as f32),
-            (geom.a, geom.b, geom.c, geom.d),
-            (geom.tx, geom.ty),
-            (cr, cg, cb, ca),
-        ));
-        drawing.draw();
+        let shader_id = atlas::process_material(|material| {
+            Some(utils::builtin_shader::get_nearest_shader(material.get_renderer()).get_id())
+        })
+        .unwrap_or(0);
+
+        target.draw(
+            source
+                .as_ref()
+                .map(|source| source.into_draw_source_arg("source", self.adjust_bounds()))
+                .into_iter()
+                .collect(),
+            utils::builtin_shader::nearest_quad_vertices_from_src_atlas(
+                sx0 as f32, sy0 as f32, sx1 as f32, sy1 as f32, geom.a, geom.b, geom.c, geom.d,
+                geom.tx, geom.ty, cr, cg, cb, ca,
+            )
+            .to_vec(),
+            [0, 1, 2, 1, 2, 3].into(),
+            blend,
+            self.adjust_bounds(),
+            shader_id,
+            [].into(),
+            option.fill_rule,
+        );
     }
 
     pub fn clear(&self) {
@@ -115,7 +127,7 @@ impl Image {
         }
     }
 
-    pub fn write_pixels(&self, pixels: Vec<u8>) {
+    pub fn write_pixels(&self, pixels: sync::Arc<[u8]>) {
         let region = self.adjust_bounds();
         let Ok(mut image) = self.image.lock() else {
             return;

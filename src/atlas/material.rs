@@ -60,7 +60,7 @@ pub(crate) fn flush(endframe: bool) {
     });
 }
 
-pub(super) fn process_material<F, T>(cb: F) -> Option<T>
+pub(crate) fn process_material<F, T>(cb: F) -> Option<T>
 where
     F: FnOnce(&Material) -> Option<T>,
 {
@@ -100,7 +100,7 @@ impl Material {
         }
     }
 
-    pub(super) fn get_renderer(&self) -> &renderer::Renderer {
+    pub(crate) fn get_renderer(&self) -> &renderer::Renderer {
         &self.renderer
     }
 
@@ -128,14 +128,25 @@ impl Material {
         material_data.inframe = true;
         while let Some(delay) = material_data.delay.pop_front() {
             match delay {
-                delay::DelayCommand::Draw(drawing) => drawing.execute_draw(material_data, material),
+                delay::DelayCommand::Draw((mut image, drawing)) => {
+                    image.execute_draw(
+                        material_data,
+                        material,
+                        drawing.sources,
+                        drawing.vertices,
+                        drawing.indexes,
+                        drawing.blend,
+                        drawing.destination_region,
+                        drawing.shader_id,
+                        drawing.uniforms,
+                        drawing.fill_rule,
+                    );
+                }
                 delay::DelayCommand::Deallocate(mut image) => {
-                    if let Some(id) = image.execute_deallocate() {
-                        material_data.remove_atlas(id);
-                    }
+                    image.execute_deallocate(material_data, material);
                 }
                 delay::DelayCommand::WritePixels((mut image, pixels, region)) => {
-                    image.execute_write_pixels(material_data, material, pixels, region)
+                    image.execute_write_pixels(material_data, material, pixels, region);
                 }
             }
         }

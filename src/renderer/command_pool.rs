@@ -1,4 +1,6 @@
-use std::{collections, mem, ptr};
+use std::{collections, mem, ptr, sync};
+
+use crate::renderer::command::DrawSourceArg;
 
 use super::{ImageID, command, driver};
 
@@ -6,7 +8,7 @@ pub(super) struct CommandPool {
     commands: collections::VecDeque<command::Command>,
     write_pixels: collections::BTreeMap<ImageID, Vec<command::WritePixelsArg>>,
 
-    vertices: Vec<u8>,
+    vertices: Vec<f32>,
     indexes: Vec<u32>,
     segment_vertices_count: usize,
 
@@ -50,17 +52,10 @@ impl CommandPool {
         indexes_offset: usize,
         indexes_count: usize,
     ) {
-        let indexes = &self.indexes[indexes_offset..indexes_offset + indexes_count];
-
         graphics.set_vertices(
             layout,
             &self.vertices[vertices_offset..vertices_offset + vertices_count],
-            unsafe {
-                &*ptr::slice_from_raw_parts(
-                    indexes.as_ptr() as *const u8,
-                    indexes_count * mem::size_of::<u32>(),
-                )
-            },
+            &self.indexes[indexes_offset..indexes_offset + indexes_count],
         );
     }
 
@@ -107,12 +102,10 @@ impl CommandPool {
 
     pub(super) fn enqueue_draw_triangles(
         &mut self,
+        images: &collections::BTreeMap<ImageID, driver::Image>,
         layout: &driver::GLVertexLayout,
-        cmd: command::DrawTriangles,
+        cmd: command::Draw,
     ) {
-        cmd.for_each_sources(|source| {
-            self.flush_write_pixels(source.get_image());
-        });
         self.flush_write_pixels(cmd.get_destination());
 
         let vertices_offset = self.vertices.len();
@@ -120,12 +113,19 @@ impl CommandPool {
         let appended_vertices_count = cmd.get_vertices_count();
         self.vertices.extend(cmd.get_vertices());
 
+        let uniforms = self.prepend_uniforms(
+            images,
+            cmd.get_destination(),
+            cmd.get_sources(),
+            cmd.get_uniforms(),
+        );
+
         let need_split =
             self.segment_vertices_count + appended_vertices_count > self.max_vertex_count_limit;
 
         if !need_split
             && let Some(command::Command::InternalDrawTriangles(last)) = self.commands.back_mut()
-            && last.mergeable(&cmd)
+            && last.mergeable(&self.vertices, &cmd, &uniforms, layout.get_size())
         {
             last.merge(&cmd);
 
@@ -142,7 +142,79 @@ impl CommandPool {
         self.segment_vertices_count = appended_vertices_count;
         self.commands
             .push_back(command::Command::InternalDrawTriangles(
-                command::InternalDrawTriangles::from(cmd, vertices_offset, indexes_offset),
+                command::InternalDrawTriangles::from(
+                    cmd,
+                    uniforms,
+                    vertices_offset,
+                    indexes_offset,
+                ),
             ));
+    }
+
+    fn prepend_uniforms(
+        &self,
+        images: &collections::BTreeMap<ImageID, driver::Image>,
+        destination: ImageID,
+        sources: &[DrawSourceArg],
+        uniforms: &[u8],
+    ) -> sync::Arc<[u8]> {
+        let mut prepend_uniforms = Vec::with_capacity(16 + sources.len() * 2);
+        if let Some(destination) = images.get(&destination) {
+            let (w, h) = destination.viewport_size();
+            prepend_uniforms.extend([
+                (2. / w as f32),
+                0.,
+                0.,
+                0.,
+                0.,
+                (2. / h as f32),
+                0.,
+                0.,
+                0.,
+                0.,
+                1.,
+                0.,
+                -1.,
+                -1.,
+                0.,
+                1.,
+            ])
+        } else {
+            prepend_uniforms.extend([0.; 16]);
+        }
+        for source in sources.iter() {
+            let Some(source) = images.get(&source.get_image()) else {
+                prepend_uniforms.extend([0.; 2]);
+                continue;
+            };
+            let (w, h) = source.viewport_size();
+            prepend_uniforms.extend([w as f32, h as f32]);
+        }
+
+        if uniforms.is_empty() {
+            return prepend_uniforms
+                .into_iter()
+                .flat_map(|v| v.to_ne_bytes())
+                .collect();
+        }
+
+        let prepend_uniforms_count = prepend_uniforms.len() * mem::size_of::<f32>();
+        let uniforms_count = uniforms.len();
+        let mut final_uniforms = vec![0u8; prepend_uniforms_count + uniforms_count];
+
+        unsafe {
+            ptr::copy_nonoverlapping(
+                prepend_uniforms.as_ptr() as *const u8,
+                final_uniforms.as_mut_ptr(),
+                prepend_uniforms_count,
+            );
+            ptr::copy_nonoverlapping(
+                uniforms.as_ptr(),
+                final_uniforms.as_mut_ptr().add(prepend_uniforms_count),
+                uniforms_count,
+            );
+        }
+
+        final_uniforms.into()
     }
 }

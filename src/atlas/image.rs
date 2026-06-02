@@ -1,8 +1,8 @@
-use std::{collections, ptr, sync};
+use std::{cell, collections, ptr, rc, sync};
 
 use crate::{renderer, utils};
 
-use super::{backend, delay, drawing, material, packing};
+use super::{backend, delay, material, packing};
 
 #[derive(Clone, Copy, Debug)]
 pub enum ImageType {
@@ -22,17 +22,27 @@ unsafe impl Send for ImageData {}
 
 #[derive(Clone, Debug)]
 pub(crate) struct Image {
-    data: sync::Arc<sync::Mutex<ImageData>>,
+    data: sync::Arc<tokio::sync::RwLock<ImageData>>,
 
     width: i32,
     height: i32,
     image_type: ImageType,
 }
 
+#[derive(Debug, Clone)]
+pub(crate) struct DrawSourceArg {
+    name: sync::Arc<str>,
+    width: i32,
+    height: i32,
+    image_type: ImageType,
+    data: sync::Arc<tokio::sync::RwLock<ImageData>>,
+    pub(super) source_region: utils::Rectangle,
+}
+
 impl Image {
     pub(crate) fn new(width: i32, height: i32, image_type: ImageType) -> Self {
         Self {
-            data: sync::Arc::new(sync::Mutex::new(ImageData {
+            data: sync::Arc::new(tokio::sync::RwLock::new(ImageData {
                 backend: None,
                 node: None,
             })),
@@ -47,51 +57,7 @@ impl Image {
         (self.width, self.height)
     }
 
-    pub(super) fn process_backend<F, T>(&self, cb: F) -> Option<T>
-    where
-        F: FnOnce(&backend::Backend) -> Option<T>,
-    {
-        let Ok(data) = self.data.lock() else {
-            return None;
-        };
-        let backend = data.backend.as_ref()?;
-
-        cb(backend)
-    }
-
-    pub(crate) fn draw(
-        &mut self,
-        region: utils::Rectangle,
-        source: Option<&'_ Image>,
-        skip_isolate: bool,
-    ) -> Option<drawing::Drawing> {
-        if !skip_isolate {
-            if let Some(atlas_id) = source.as_ref().and_then(|&source| source.get_atlas_id()) {
-                material::process_material(|material| {
-                    material.add_inframe_source(atlas_id);
-                    Option::<()>::None
-                });
-            }
-
-            material::process_material_data(|data, material| {
-                let id = self.isolate(data, material, source);
-                if let Some(id) = id {
-                    data.remove_atlas(id);
-                }
-                Option::<()>::None
-            });
-        }
-
-        let region = region.add(self.get_atlas_region().min);
-        let mut drawing = drawing::Drawing::new(self.clone(), region);
-
-        if let Some(source) = source {
-            drawing.set_source("source", source.clone());
-        }
-        Some(drawing)
-    }
-
-    pub(crate) fn write_pixels(&mut self, pixels: Vec<u8>, region: utils::Rectangle) {
+    pub(crate) fn write_pixels(&mut self, pixels: sync::Arc<[u8]>, region: utils::Rectangle) {
         material::process_material_data(|data, material| {
             if !data.in_frame() {
                 data.append_delay(delay::DelayCommand::WritePixels((
@@ -101,375 +67,481 @@ impl Image {
                 )));
                 return Option::<()>::None;
             }
-
             self.execute_write_pixels(data, material, pixels, region);
             Option::<()>::None
         });
     }
-
+    #[allow(clippy::too_many_arguments)]
     pub(super) fn execute_write_pixels(
         &mut self,
         material_data: &mut material::MaterialData,
         material: &material::Material,
-        pixels: Vec<u8>,
+        pixels: sync::Arc<[u8]>,
         mut region: utils::Rectangle,
     ) {
-        if self.get_atlas_id().is_none() {
+        let backend_is_none = {
+            let data = self.data.blocking_read();
+            data.backend.is_none()
+        };
+
+        if backend_is_none {
             if pixels.is_empty() {
                 return;
             }
-            self.allocate(material_data, material, collections::HashSet::new(), true);
+            self.allocate(material_data, material, Default::default(), true);
         }
 
-        let atlas_region = self.get_atlas_region();
+        let data = self.data.blocking_read();
+        let r = region_with_padding(self.width, self.height, self.image_type, data.node.as_ref());
+
+        let Some(backend) = data.backend.as_ref() else {
+            return;
+        };
+
         if region.ne(&utils::Rectangle::new(0, 0, self.width, self.height))
-            || Self::padding_size(self.image_type) == 0
+            || padding_size(self.image_type) == 0
         {
-            region = region.add(atlas_region.min);
-            self.process_backend(|backend| {
+            region = region.add(r.min);
+
+            if pixels.is_empty() {
+                backend.clear_pixels(material.get_renderer(), region);
+            } else {
                 backend.write_pixels(pixels, region);
-                Option::<()>::None
-            });
+            }
             return;
         }
 
-        let mut atlas_pixels =
-            vec![0u8; (atlas_region.get_width() * atlas_region.get_height() * 4) as usize];
-        let width = region.get_width();
-        let atlas_width = atlas_region.get_width();
-        for i in 0..region.get_height() {
+        let mut atlas_pixels = vec![0u8; (r.get_width() * r.get_height() * 4) as usize];
+        let width = region.get_width() as usize;
+        let atlas_width = r.get_width() as usize;
+        for i in 0..region.get_height() as usize {
             unsafe {
                 ptr::copy_nonoverlapping(
-                    pixels.as_ptr().add((4 * width * i) as usize),
-                    atlas_pixels
-                        .as_mut_ptr()
-                        .add((4 * atlas_width * i) as usize),
-                    (4 * width) as usize,
+                    pixels.as_ptr().add(4 * width * i),
+                    atlas_pixels.as_mut_ptr().add(4 * atlas_width * i),
+                    4 * width,
                 );
             }
         }
-        self.process_backend(|backend| {
-            backend.write_pixels(atlas_pixels, atlas_region);
+        backend.write_pixels(atlas_pixels.into(), r);
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn draw(
+        &mut self,
+        sources: Vec<DrawSourceArg>,
+        vertices: Vec<f32>,
+        indexes: sync::Arc<[u32]>,
+        blend: renderer::Blend,
+        destination_region: utils::Rectangle,
+        shader_id: renderer::ShaderID,
+        uniforms: sync::Arc<[u8]>,
+        fill_rule: renderer::FillRule,
+    ) {
+        material::process_material_data(|data, material| {
+            if !data.in_frame() {
+                data.append_delay(delay::DelayCommand::Draw((
+                    self.clone(),
+                    delay::Draw {
+                        sources,
+                        vertices,
+                        indexes,
+                        blend,
+                        destination_region,
+                        shader_id,
+                        uniforms,
+                        fill_rule,
+                    },
+                )));
+                return Option::<()>::None;
+            }
+
+            self.execute_draw(
+                data,
+                material,
+                sources,
+                vertices,
+                indexes,
+                blend,
+                destination_region,
+                shader_id,
+                uniforms,
+                fill_rule,
+            );
             Option::<()>::None
         });
     }
 
-    fn isolate(
+    #[allow(clippy::too_many_arguments)]
+    pub(super) fn execute_draw(
         &mut self,
         material_data: &mut material::MaterialData,
         material: &material::Material,
-        source: Option<&Self>,
-    ) -> Option<renderer::ImageID> {
-        let (existed, new_image) = self.isolate_from_source_atlas(material_data, material, source);
-        if !existed {
-            let old_atlas_id = self.get_atlas_id();
-            let mut forbidden = collections::HashSet::new();
-            if let Some(atlas_id) = old_atlas_id {
-                forbidden.insert(atlas_id);
-            }
-            if let Some(source_atlas_id) = source.and_then(|s| s.get_atlas_id()) {
-                forbidden.insert(source_atlas_id);
-            }
-            material_data.for_each_atlas(|atlas| {
-                let Some(atlas_id) = atlas.get_atlas_id() else {
-                    return true;
-                };
-                if material_data.is_in_frame(atlas_id) {
-                    forbidden.insert(atlas_id);
-                }
+        mut sources: Vec<DrawSourceArg>,
+        mut vertices: Vec<f32>,
+        indexes: sync::Arc<[u32]>,
+        blend: renderer::Blend,
+        destination_region: utils::Rectangle,
+        shader_id: renderer::ShaderID,
+        uniforms: sync::Arc<[u8]>,
+        fill_rule: renderer::FillRule,
+    ) {
+        for source in sources.iter() {
+            let Some(image_id) = source.get_image_id() else {
+                continue;
+            };
+            material_data.add_inframe_source(image_id);
+        }
+        self.ensure_isolate_from_source(material_data, material, &sources);
 
+        let data = self.data.blocking_read();
+
+        let r = region_with_padding(self.width, self.height, self.image_type, data.node.as_ref());
+        let destination_region = destination_region.add(r.min);
+
+        material.get_renderer().vertex_offset(
+            shader_id,
+            &mut vertices,
+            renderer::LayoutVertexOffset::Destination,
+            (r.min.x as f32, r.min.y as f32),
+        );
+        for (index, source) in sources.iter_mut().enumerate() {
+            let Some(region) = source.get_region() else {
+                continue;
+            };
+            material.get_renderer().vertex_offset(
+                shader_id,
+                &mut vertices,
+                renderer::LayoutVertexOffset::Source(index),
+                (region.min.x as f32, region.min.y as f32),
+            );
+
+            source.source_region = source.source_region.add(region.min);
+        }
+
+        let Some(backend) = data.backend.as_ref() else {
+            return;
+        };
+        backend.draw(
+            sources.into(),
+            vertices.into(),
+            indexes,
+            blend,
+            destination_region,
+            shader_id,
+            uniforms,
+            fill_rule,
+        );
+    }
+
+    fn ensure_isolate_from_source(
+        &mut self,
+        material_data: &mut material::MaterialData,
+        material: &material::Material,
+        sources: &[DrawSourceArg],
+    ) {
+        let (exist_backend, new_image) =
+            self.ensure_isolate_from_source_exist_atlas(material_data, material, sources);
+        if !exist_backend {
+            let mut forbidden = collections::HashSet::new();
+            material_data.for_each_atlas(|backend| {
+                let id = backend.get_id();
+                if material_data.is_in_frame(id) {
+                    forbidden.insert(id);
+                }
                 true
             });
 
             self.allocate(material_data, material, forbidden, false);
-            if old_atlas_id.is_some() && self.get_atlas_id() != old_atlas_id {
-                return old_atlas_id;
-            }
-            return None;
+            return;
         }
-        if let Some(new_image) = new_image {
-            return new_image.move_to(self);
-        }
-        None
-    }
 
-    pub(crate) fn deallocate(&mut self) {
-        let id = material::process_material_data(|data, _| {
-            if !data.in_frame() {
-                data.append_delay(delay::DelayCommand::Deallocate(self.clone()));
-                return None;
-            }
-
-            self.execute_deallocate()
-        });
-
-        if let Some(id) = id {
-            material::process_material(|material| {
-                material.del_atlas(id);
-                Option::<()>::None
-            });
-        }
-    }
-
-    pub(super) fn execute_deallocate(&mut self) -> Option<renderer::ImageID> {
-        let Ok(mut data) = self.data.lock() else {
-            return None;
+        let Some(new_image) = new_image else {
+            return;
         };
-
-        let backend = data.backend.take()?;
-
-        if let Some(node) = data.node.take() {
-            let region = node.borrow().get_region();
-            backend.write_pixels(vec![], region);
-
-            packing::free(&node);
-            // packing::TreeNode::free(&Some(node));
-            return None;
-        }
-
-        backend.dispose()
+        new_image.move_to(material_data, material, self);
     }
 
-    fn move_to(self, destination: &mut Self) -> Option<renderer::ImageID> {
-        let id = destination.execute_deallocate();
+    fn move_to(
+        self,
+        material_data: &mut material::MaterialData,
+        material: &material::Material,
+        destination: &mut Self,
+    ) {
+        destination.execute_deallocate(material_data, material);
 
         destination.width = self.width;
         destination.height = self.height;
         destination.image_type = self.image_type;
         destination.data = self.data;
-
-        id
     }
 
-    fn isolate_from_source_atlas(
-        &self,
+    fn ensure_isolate_from_source_exist_atlas(
+        &mut self,
         material_data: &mut material::MaterialData,
         material: &material::Material,
-        source: Option<&Self>,
+        sources: &[DrawSourceArg],
     ) -> (bool, Option<Self>) {
-        let Some(atlas_id) = self.get_atlas_id() else {
-            return (false, None);
-        };
-
-        {
-            let Ok(data) = self.data.lock() else {
+        let (mut new_image, forbidden) = {
+            let data = self.data.blocking_read();
+            let Some(backend) = data.backend.as_ref() else {
                 return (false, None);
             };
+            let atlas_id = backend.get_id();
+
             if data.node.is_none() {
-                if source
-                    .and_then(|source| source.get_atlas_id())
-                    .ne(&Some(atlas_id))
-                {
+                return (true, None);
+            }
+            for source in sources.iter() {
+                let Some(source_image_id) = source.get_image_id() else {
+                    continue;
+                };
+                if source_image_id != atlas_id {
                     return (true, None);
                 }
-                return (false, None);
-            }
-        }
-
-        if source
-            .and_then(|source| source.get_atlas_id())
-            .ne(&Some(atlas_id))
-        {
-            return (true, None);
-        }
-        let mut new_image = Self::new(self.width, self.height, self.image_type);
-        // let region =
-        //     Self::atlas_region_width_padding(self.width, self.height, self.image_type, &self.node);
-
-        let mut forbidden = collections::HashSet::new();
-        forbidden.insert(atlas_id);
-        material_data.for_each_atlas(|atlas| {
-            let Some(atlas_id) = atlas.get_atlas_id() else {
-                return true;
-            };
-            if material_data.is_in_frame(atlas_id) {
-                forbidden.insert(atlas_id);
             }
 
-            true
-        });
+            let new_image = Self::new(self.width, self.height, self.image_type);
 
+            let mut forbidden = collections::HashSet::new();
+            forbidden.insert(atlas_id);
+            material_data.for_each_atlas(|backend| {
+                let id = backend.get_id();
+                if material_data.is_in_frame(id) {
+                    forbidden.insert(id);
+                }
+                true
+            });
+
+            (new_image, forbidden)
+        };
         new_image.allocate(material_data, material, forbidden, false);
 
-        let destination_region = utils::Rectangle::new(0, 0, self.width, self.height);
-        // let source_region = utils::Rectangle::new(0, 0, self.width, self.height);
+        let (w, h) = (self.width as f32, self.height as f32);
 
-        if let Some(mut drawing) = new_image.draw(destination_region, Some(self), true) {
-            drawing.dst_src(drawing::AtlasDrawingQuadDstSrc::new(
-                (0., 0., self.width as f32, self.height as f32),
-                (0., 0., self.width as f32, self.height as f32),
-                [(1., 1., 1., 1.); 4],
-            ));
-            drawing.set_blend(renderer::BLEND_COPY);
-            drawing.set_fill_rule(renderer::FillRule::FillAll);
-            drawing.execute_draw(material_data, material);
-        }
+        new_image.execute_draw(
+            material_data,
+            material,
+            sources.to_vec(),
+            utils::builtin_shader::nearest_quad_vertices_from_dst_src(
+                0., 0., w, h, 0., 0., w, h, 1., 1., 1., 1.,
+            )
+            .to_vec(),
+            [0, 1, 2, 1, 2, 3].into(),
+            renderer::BLEND_COPY,
+            utils::Rectangle::new(0, 0, self.width, self.height),
+            utils::builtin_shader::get_nearest_shader(material.get_renderer()).get_id(),
+            [].into(),
+            renderer::FillRule::FillAll,
+        );
 
         (true, Some(new_image))
-    }
-
-    fn get_atlas_id(&self) -> Option<renderer::ImageID> {
-        self.process_backend(|backend| backend.get_atlas_id())
-    }
-
-    pub(crate) fn get_atlas_region(&self) -> utils::Rectangle {
-        let Ok(data) = self.data.lock() else {
-            return utils::Rectangle::new(0, 0, 0, 0);
-        };
-        Self::atlas_region_width_padding(
-            self.width,
-            self.height,
-            self.image_type,
-            data.node.as_ref(),
-        )
     }
 
     fn allocate(
         &mut self,
         material_data: &mut material::MaterialData,
         material: &material::Material,
-        forbidden_atlas_id: collections::HashSet<renderer::ImageID>,
+        forbidden: collections::HashSet<renderer::ImageID>,
         as_source: bool,
     ) {
-        if matches!(self.image_type, ImageType::Screen) {
-            let Ok(mut data) = self.data.lock() else {
-                return;
-            };
-            data.backend = backend::Backend::new(
-                material_data,
-                material,
-                self.width,
-                self.height,
-                false,
-                true,
-                true,
-                false,
-            );
+        let mut data = self.data.blocking_write();
+        if data.backend.is_some() {
             return;
         }
 
-        let padding_size = Self::padding_size(self.image_type);
-        let (width, height) = (self.width + padding_size, self.height + padding_size);
-        let max_size = material.get_max_size();
+        if matches!(self.image_type, ImageType::Screen) {
+            let image = material
+                .get_renderer()
+                .create_image(self.width, self.height, true);
+            let id = image.get_id();
 
-        // volatile
-        if !self.can_put_atlas(max_size) {
-            if width > max_size || height > max_size {
+            let backend = backend::Backend::new(image, None, false);
+            material_data.add_atlas(id, backend.clone());
+            data.backend.replace(backend);
+            return;
+        }
+
+        let padding_size = padding_size(self.image_type);
+        let (wp, hp) = (self.width + padding_size, self.height + padding_size);
+
+        // whole backend
+        if !self.can_put_atlas(material.get_max_size()) {
+            if wp > material.get_max_size() || hp > material.get_max_size() {
                 return;
             }
-            let Ok(mut data) = self.data.lock() else {
-                return;
-            };
-            data.backend = backend::Backend::new(
-                material_data,
-                material,
-                self.width,
-                self.height,
-                as_source && matches!(self.image_type, ImageType::Regular),
-                false,
-                true,
-                false,
+
+            let image = material.get_renderer().create_image(wp, hp, false);
+            let id = image.get_id();
+
+            let backend = backend::Backend::new(
+                image,
+                None,
+                as_source && matches!(self.image_type, ImageType::Screen),
             );
+            material_data.add_atlas(id, backend.clone());
+            data.backend.replace(backend);
             return;
         }
 
-        // regular, a part of material
+        // a part of backend
         let mut finded = false;
         material_data.for_each_atlas(|backend| {
-            let Some(node) =
-                backend.alloc_node(material.get_renderer(), width, height, |backend| {
-                    if backend.get_source() != as_source {
-                        return false;
-                    }
-                    let atlas_id = backend.get_image().get_id();
-                    if material_data.is_in_frame(atlas_id) {
-                        return false;
-                    }
-                    if forbidden_atlas_id.contains(&atlas_id) {
-                        return false;
-                    }
+            let mut backend_data = backend.data.blocking_write();
 
-                    true
-                })
-            else {
-                return true; // continue for_each atlas
-            };
+            if backend_data.get_source() != as_source {
+                return true;
+            }
 
-            let Ok(mut data) = self.data.lock() else {
+            if forbidden.contains(&backend_data.get_atlas_id()) {
+                return true;
+            }
+
+            if let Some(node) = backend_data.allocate_node(material.get_renderer(), wp, hp) {
+                data.backend.replace(backend.clone());
+                data.node.replace(node);
+                finded = true;
                 return false;
-            };
-            data.backend.replace(backend.clone());
-            data.node.replace(node);
-            finded = true;
-            false // break for_each atlas
+            }
+            true
         });
         if finded {
             return;
         }
 
-        // init page size
-        let page_size = if as_source {
-            material.get_min_source_size()
+        // a part of backend, but create new backend
+        let (mut width, mut height) = if as_source {
+            let size = material.get_min_source_size();
+            (size, size)
         } else {
-            material.get_min_destination_size()
+            let size = material.get_min_destination_size();
+            (size, size)
         };
-        let mut w = page_size;
-        while width > w {
-            w *= 2;
-            if w > max_size {
+        while wp > width {
+            width *= 2;
+            if width > material.get_max_size() {
                 return;
             }
         }
-        let mut h = page_size;
-        while height > h {
-            h *= 2;
-            if h > max_size {
+        while hp > height {
+            height *= 2;
+            if height > material.get_max_size() {
                 return;
             }
         }
-        // regular, a part of material, but create new material
-        if let Some(backend) =
-            backend::Backend::new(material_data, material, w, h, as_source, false, false, true)
-        {
-            let Ok(mut data) = self.data.lock() else {
-                return;
-            };
-            data.node = backend.alloc_node(material.get_renderer(), width, height, |_| true);
-            data.backend = Some(backend);
-        }
+
+        let page = rc::Rc::new(cell::RefCell::new(packing::Page::new(
+            width,
+            height,
+            material.get_max_size(),
+        )));
+        let Some(node) = page.borrow_mut().alloc(wp, hp) else {
+            return;
+        };
+        let image = material.get_renderer().create_image(wp, hp, false);
+        let id = image.get_id();
+
+        let backend = backend::Backend::new(image, Some(page), as_source);
+        material_data.add_atlas(id, backend.clone());
+        data.backend.replace(backend);
+        data.node.replace(node);
     }
 
-    fn atlas_region_width_padding(
-        width: i32,
-        height: i32,
-        image_type: ImageType,
-        node: Option<&packing::Node>,
-    ) -> utils::Rectangle {
-        if let Some(node) = node.as_ref() {
-            node.borrow().get_region()
-        } else {
-            let padding_size = Self::padding_size(image_type);
+    pub(crate) fn deallocate(&mut self) {
+        material::process_material_data(|data, material| {
+            if !data.in_frame() {
+                data.append_delay(delay::DelayCommand::Deallocate(self.clone()));
+                return Option::<()>::None;
+            }
 
-            utils::Rectangle::new(0, 0, width + padding_size, height + padding_size)
-        }
+            self.execute_deallocate(data, material);
+            Option::<()>::None
+        });
     }
 
-    #[inline(always)]
-    const fn padding_size(image_type: ImageType) -> i32 {
-        if matches!(image_type, ImageType::Regular) {
-            1
-        } else {
-            0
+    pub(super) fn execute_deallocate(
+        &mut self,
+        material_data: &mut material::MaterialData,
+        material: &material::Material,
+    ) {
+        let mut data = self.data.blocking_write();
+        let Some(backend) = data.backend.take() else {
+            return;
+        };
+
+        if let Some(node) = data.node.take() {
+            backend.clear_pixels(material.get_renderer(), node.borrow().get_region());
+            packing::free(&node);
+            return;
         }
+
+        material_data.remove_atlas(backend.dispose());
     }
 
     #[inline(always)]
     const fn can_put_atlas(&self, max_size: i32) -> bool {
         if matches!(self.image_type, ImageType::Regular) {
-            let padding_size = Self::padding_size(self.image_type);
+            let padding_size = padding_size(self.image_type);
             self.width + padding_size <= max_size && self.height + padding_size <= max_size
         } else {
             false
+        }
+    }
+}
+fn region_with_padding(
+    width: i32,
+    height: i32,
+    image_type: ImageType,
+    node: Option<&packing::Node>,
+) -> utils::Rectangle {
+    if let Some(node) = node {
+        node.borrow().get_region()
+    } else {
+        let padding_size = padding_size(image_type);
+        utils::Rectangle::new(0, 0, width + padding_size, height + padding_size)
+    }
+}
+
+#[inline(always)]
+const fn padding_size(image_type: ImageType) -> i32 {
+    if matches!(image_type, ImageType::Regular) {
+        1
+    } else {
+        0
+    }
+}
+
+impl DrawSourceArg {
+    pub(crate) fn get_name(&self) -> sync::Arc<str> {
+        self.name.clone()
+    }
+
+    pub(crate) fn get_image_id(&self) -> Option<renderer::ImageID> {
+        let data = self.data.blocking_read();
+        let backend = data.backend.as_ref()?;
+
+        Some(backend.get_id())
+    }
+
+    pub(crate) fn get_region(&self) -> Option<utils::Rectangle> {
+        let data = self.data.blocking_read();
+
+        Some(region_with_padding(
+            self.width,
+            self.height,
+            self.image_type,
+            data.node.as_ref(),
+        ))
+    }
+
+    pub(crate) fn from(image: &Image, name: &str, source_region: utils::Rectangle) -> Self {
+        Self {
+            name: name.into(),
+            width: image.width,
+            height: image.height,
+            image_type: image.image_type,
+            data: image.data.clone(),
+            source_region,
         }
     }
 }

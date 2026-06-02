@@ -27,19 +27,19 @@ pub use ui::{InputState, Key, MouseButton};
 
 extern crate console_error_panic_hook;
 
-// #[wasm_bindgen_futures::wasm_bindgen::prelude::wasm_bindgen]
-// pub async fn run(canvas: web_sys::HtmlCanvasElement) {
-//     panic::set_hook(Box::new(console_error_panic_hook::hook));
-//
-//     test_draw(&canvas).await;
-// }
-
 #[wasm_bindgen::prelude::wasm_bindgen]
 unsafe extern "C" {
     #[wasm_bindgen::prelude::wasm_bindgen(js_namespace = console)]
     pub fn log(s: &str);
 }
 
+// #[wasm_bindgen_futures::wasm_bindgen::prelude::wasm_bindgen]
+// pub async fn run(canvas: web_sys::HtmlCanvasElement) {
+//     // panic::set_hook(Box::new(console_error_panic_hook::hook));
+//
+//     test_draw(&canvas).await;
+// }
+//
 // struct MockGame {
 //     font_img: Image,
 // }
@@ -51,7 +51,7 @@ unsafe extern "C" {
 //         screen.draw(&self.font_img, option);
 //     }
 //
-//     fn update(&mut self) {}
+//     async fn update(&mut self) {}
 //
 //     fn layout(&self) -> (i32, i32) {
 //         (800, 600)

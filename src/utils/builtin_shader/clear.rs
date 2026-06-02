@@ -22,11 +22,18 @@ fn create_shader(renderer: &renderer::Renderer) -> renderer::Shader {
         CLEAR_VERTEX_SHADER_SOURCE.to_owned(),
         CLEAR_FRAGMENT_SHADER_SOURCE.to_owned(),
         false,
-        renderer::GLVertexLayout::new_with_parts(vec![renderer::GLVertexLayoutPart::new(2, 8)]),
-        vec![(
+        renderer::GLVertexLayout::new_with_parts([renderer::GLVertexLayoutPart::new(2, 8)].into()),
+        Box::new(|vertices, _, (offset_x, offset_y)| {
+            for i in (0..vertices.len()).step_by(2) {
+                vertices[i] += offset_x;
+                vertices[i + 1] += offset_y;
+            }
+        }),
+        [(
             "projection".to_owned(),
             renderer::ShaderBasicType::Mat4.into(),
-        )],
+        )]
+        .into(),
     )
 }
 
@@ -36,7 +43,7 @@ pub(crate) fn get_clear_shader(renderer: &renderer::Renderer) -> &renderer::Shad
     SHADER.get_or_init(|| create_shader(renderer))
 }
 
-pub(crate) fn get_clear_uniform(region: (i32, i32)) -> Vec<u8> {
+pub(crate) fn get_clear_uniform(region: (i32, i32)) -> sync::Arc<[u8]> {
     vec![
         (2. / region.0 as f32),
         0.,
@@ -58,4 +65,42 @@ pub(crate) fn get_clear_uniform(region: (i32, i32)) -> Vec<u8> {
     .into_iter()
     .flat_map(|v| v.to_ne_bytes())
     .collect()
+}
+
+pub fn clear_quad_vertices_from_dst_src(
+    dx0: f32,
+    dy0: f32,
+    dx1: f32,
+    dy1: f32,
+) -> sync::Arc<[f32]> {
+    let dx0 = adjust_detination_pixel(dx0);
+    let dy0 = adjust_detination_pixel(dy0);
+    let dx1 = adjust_detination_pixel(dx1);
+    let dy1 = adjust_detination_pixel(dy1);
+
+    [
+        dx0, dy0, //
+        dx1, dy0, //
+        dx0, dy1, //
+        dx1, dy1, //
+    ]
+    .into()
+}
+
+fn adjust_detination_pixel(x: f32) -> f32 {
+    let mut x_int = (x as i32) as f32;
+    if x < 0. && x != x_int {
+        x_int -= 1.;
+    }
+    let frac = x - x_int;
+
+    if frac < (3. / 16.) {
+        x_int
+    } else if frac < (8. / 16.) {
+        x_int + (5. / 16.)
+    } else if frac < (13. / 16.) {
+        x_int + (11. / 16.)
+    } else {
+        x_int + 1.
+    }
 }

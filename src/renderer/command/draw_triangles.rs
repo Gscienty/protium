@@ -1,28 +1,30 @@
+use std::sync;
+
 use crate::{renderer, utils};
 
-#[derive(Debug, PartialEq, Eq)]
-pub(crate) struct DrawTriangleSourceArg {
-    name: String,
+#[derive(Debug, PartialEq, Eq, Clone)]
+pub(crate) struct DrawSourceArg {
+    name: sync::Arc<str>,
     image: renderer::ImageID,
 }
 
 #[derive(Debug)]
-pub(crate) struct DrawTriangles {
+pub(crate) struct Draw {
     destination: renderer::ImageID,
-    sources: Vec<DrawTriangleSourceArg>,
-    vertices: Vec<u8>,
-    indexes: Vec<u32>,
+    sources: sync::Arc<[DrawSourceArg]>,
+    vertices: sync::Arc<[f32]>,
+    indexes: sync::Arc<[u32]>,
     blend: renderer::driver::Blend,
     destination_region: utils::Rectangle,
     shader: renderer::ShaderID,
-    uniforms: Vec<u8>,
+    uniforms: sync::Arc<[u8]>,
     fill_rule: renderer::driver::FillRule,
 }
 
 #[derive(Debug)]
 pub(crate) struct InternalDrawTriangles {
     destination: renderer::ImageID,
-    sources: Vec<DrawTriangleSourceArg>,
+    sources: sync::Arc<[DrawSourceArg]>,
 
     vertices_offset: usize,
     vertices_count: usize,
@@ -33,13 +35,14 @@ pub(crate) struct InternalDrawTriangles {
     blend: renderer::driver::Blend,
     destination_regions: Vec<renderer::driver::DstRegion>,
     shader_id: renderer::ShaderID,
-    uniforms: Vec<u8>,
+    uniforms: sync::Arc<[u8]>,
     fill_rule: renderer::driver::FillRule,
 }
 
 impl InternalDrawTriangles {
     pub(crate) fn from(
-        value: DrawTriangles,
+        value: Draw,
+        uniforms: sync::Arc<[u8]>,
         vertices_offset: usize,
         indexes_offset: usize,
     ) -> Self {
@@ -58,21 +61,20 @@ impl InternalDrawTriangles {
                 value.indexes.len() as i32,
             )],
             shader_id: value.shader,
-            uniforms: value.uniforms,
+            uniforms,
             fill_rule: value.fill_rule,
         }
     }
 
-    pub(crate) fn merge(&mut self, value: &DrawTriangles) {
+    pub(crate) fn merge(&mut self, value: &Draw) {
         self.vertices_count += value.vertices.len();
         self.indexes_count += value.indexes.len();
 
-        if let Some(destination_region) = self.destination_regions.last_mut()
-            && destination_region
-                .get_region()
-                .eq(&value.destination_region)
+        if matches!(self.destination_regions.last(), Some(region) if region.get_region() == value.destination_region)
         {
-            destination_region.add_count(value.indexes.len() as i32);
+            if let Some(destination_region) = self.destination_regions.last_mut() {
+                destination_region.add_count(value.indexes.len() as i32);
+            }
         } else {
             self.destination_regions
                 .push(renderer::driver::DstRegion::new(
@@ -82,11 +84,17 @@ impl InternalDrawTriangles {
         }
     }
 
-    pub(crate) fn mergeable(&self, cmd: &DrawTriangles) -> bool {
+    pub(crate) fn mergeable(
+        &self,
+        vertices: &[f32],
+        cmd: &Draw,
+        uniforms: &[u8],
+        vertex_floats_count: usize,
+    ) -> bool {
         if self.shader_id != cmd.shader {
             return false;
         }
-        if self.uniforms.ne(&cmd.uniforms) {
+        if self.uniforms.as_ref().ne(uniforms) {
             return false;
         }
         if self.destination != cmd.destination {
@@ -99,7 +107,60 @@ impl InternalDrawTriangles {
             return false;
         }
 
-        !matches!(cmd.fill_rule, renderer::driver::FillRule::FillAll)
+        if !matches!(cmd.fill_rule, renderer::driver::FillRule::FillAll)
+            && Self::might_overlap_destination_regions(
+                &vertices[self.vertices_offset..self.vertices_offset + self.vertices_count],
+                &cmd.vertices,
+                vertex_floats_count,
+            )
+        {
+            return false;
+        }
+
+        true
+    }
+
+    fn might_overlap_destination_regions(
+        vertices1: &[f32],
+        vertices2: &[f32],
+        vertex_floats_count: usize,
+    ) -> bool {
+        let (min_x1, min_y1, max_x1, max_y1) =
+            Self::destination_region_from_vertices(vertices1, vertex_floats_count);
+        let (min_x2, min_y2, max_x2, max_y2) =
+            Self::destination_region_from_vertices(vertices2, vertex_floats_count);
+
+        min_x1 < max_x2 + 1. && min_x2 < max_x1 + 1. && min_y1 < max_y2 + 1. && min_y2 < max_y1 + 1.
+    }
+
+    fn destination_region_from_vertices(
+        vertices: &[f32],
+        vertex_floats_count: usize,
+    ) -> (f32, f32, f32, f32) {
+        let mut min_x = f32::INFINITY;
+        let mut min_y = f32::INFINITY;
+        let mut max_x = f32::NEG_INFINITY;
+        let mut max_y = f32::NEG_INFINITY;
+
+        for index in (0..vertices.len()).step_by(vertex_floats_count) {
+            let x = vertices[index];
+            let y = vertices[index + 1];
+
+            if x < min_x {
+                min_x = x;
+            }
+            if y < min_y {
+                min_y = y;
+            }
+            if max_x < x {
+                max_x = x;
+            }
+            if max_y < y {
+                max_y = y;
+            }
+        }
+
+        (min_x, min_y, max_x, max_y)
     }
 
     pub(crate) fn destination_regions_is_empty(&self) -> bool {
@@ -110,7 +171,7 @@ impl InternalDrawTriangles {
         self.destination
     }
 
-    pub(crate) fn get_sources(&self) -> &[DrawTriangleSourceArg] {
+    pub(crate) fn get_sources(&self) -> &[DrawSourceArg] {
         &self.sources
     }
 
@@ -151,17 +212,17 @@ impl InternalDrawTriangles {
     }
 }
 
-impl DrawTriangles {
+impl Draw {
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn new(
         destination: renderer::ImageID,
-        sources: Vec<DrawTriangleSourceArg>,
-        vertices: Vec<u8>,
-        indexes: Vec<u32>,
+        sources: sync::Arc<[DrawSourceArg]>,
+        vertices: sync::Arc<[f32]>,
+        indexes: sync::Arc<[u32]>,
         blend: renderer::driver::Blend,
         destination_region: utils::Rectangle,
         shader: renderer::ShaderID,
-        uniforms: Vec<u8>,
+        uniforms: sync::Arc<[u8]>,
         fill_rule: renderer::driver::FillRule,
     ) -> Self {
         Self {
@@ -181,6 +242,14 @@ impl DrawTriangles {
         self.destination
     }
 
+    pub(crate) fn get_sources(&self) -> &[DrawSourceArg] {
+        &self.sources
+    }
+
+    pub(crate) fn get_uniforms(&self) -> &[u8] {
+        &self.uniforms
+    }
+
     pub(crate) fn get_shader(&self) -> renderer::ShaderID {
         self.shader
     }
@@ -189,7 +258,7 @@ impl DrawTriangles {
         self.vertices.len()
     }
 
-    pub(crate) fn get_vertices(&self) -> &[u8] {
+    pub(crate) fn get_vertices(&self) -> &[f32] {
         &self.vertices
     }
 
@@ -199,7 +268,7 @@ impl DrawTriangles {
 
     pub(crate) fn for_each_sources<F>(&self, mut cb: F)
     where
-        F: FnMut(&DrawTriangleSourceArg),
+        F: FnMut(&DrawSourceArg),
     {
         for source in self.sources.iter() {
             cb(source);
@@ -207,8 +276,8 @@ impl DrawTriangles {
     }
 }
 
-impl DrawTriangleSourceArg {
-    pub(crate) fn new(name: String, image: renderer::ImageID) -> Self {
+impl DrawSourceArg {
+    pub(crate) fn new(name: sync::Arc<str>, image: renderer::ImageID) -> Self {
         Self { name, image }
     }
 

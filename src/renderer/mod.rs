@@ -1,25 +1,31 @@
-use std::sync;
+use std::{collections, sync};
 
 use tokio::sync::mpsc;
 
-mod command;
 mod command_pool;
 mod command_processor;
-mod drawing;
 mod driver;
 mod image;
 mod shader;
 
+pub(crate) mod command;
+
 pub type ImageID = usize;
 pub type ShaderID = usize;
 
-pub(crate) use drawing::Drawing;
 pub use driver::{
     BLEND_CLEAR, BLEND_COPY, BLEND_DEFAULT, BLEND_SOURCE_OVER, Blend, ColorSpace, FillRule,
-    GLVertexEntity, GLVertexLayout, GLVertexLayoutPart, ShaderBasicType, ShaderType,
+    GLVertexLayout, GLVertexLayoutPart, ShaderBasicType,
 };
 pub(crate) use image::Image;
 pub(crate) use shader::Shader;
+
+use crate::renderer;
+
+pub enum LayoutVertexOffset {
+    Destination,
+    Source(usize),
+}
 
 pub(crate) struct Renderer {
     next_image_id: sync::atomic::AtomicUsize,
@@ -28,6 +34,10 @@ pub(crate) struct Renderer {
     sender: mpsc::UnboundedSender<command::Command>,
 
     max_texture_size: i32,
+
+    layouts: tokio::sync::Mutex<
+        collections::BTreeMap<ShaderID, Box<dyn Fn(&mut [f32], LayoutVertexOffset, (f32, f32))>>,
+    >,
 }
 
 impl Renderer {
@@ -46,6 +56,8 @@ impl Renderer {
             sender,
 
             max_texture_size,
+
+            layouts: tokio::sync::Mutex::new(collections::BTreeMap::new()),
         })
     }
 
@@ -76,7 +88,8 @@ impl Renderer {
         fragment_source: String,
         texels: bool,
         vertex_layout: driver::GLVertexLayout,
-        uniforms: Vec<(String, driver::ShaderType)>,
+        vertex_destination_offset: Box<dyn Fn(&mut [f32], LayoutVertexOffset, (f32, f32))>,
+        uniforms: sync::Arc<[(String, driver::ShaderType)]>,
     ) -> shader::Shader {
         let id = self
             .next_shader_id
@@ -92,6 +105,27 @@ impl Renderer {
                 uniforms,
                 texels,
             )));
+
+        {
+            let mut layouts = self.layouts.blocking_lock();
+            layouts.insert(id, vertex_destination_offset);
+        }
+
         shader::Shader::new(id, self.sender.clone())
+    }
+
+    pub(crate) fn vertex_offset(
+        &self,
+        shader_id: renderer::ShaderID,
+        vertices: &mut [f32],
+        offset_type: LayoutVertexOffset,
+        offset: (f32, f32),
+    ) {
+        let layouts = self.layouts.blocking_lock();
+        let Some(f) = layouts.get(&shader_id) else {
+            return;
+        };
+
+        f(vertices, offset_type, offset)
     }
 }

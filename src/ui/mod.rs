@@ -1,5 +1,5 @@
 mod clock;
-mod drawing;
+//mod drawing;
 mod event_loop;
 mod fps;
 mod game;

@@ -1,3 +1,5 @@
+use std::sync;
+
 use crate::{
     renderer::{self, driver},
     utils,
@@ -5,7 +7,7 @@ use crate::{
 
 #[derive(Debug)]
 pub(crate) struct WritePixelsArg {
-    pixels: Vec<u8>,
+    pixels: sync::Arc<[u8]>,
     region: utils::Rectangle,
 }
 
@@ -24,7 +26,7 @@ pub(crate) struct InternalWritePixels {
 impl WritePixels {
     pub(crate) fn new(
         destination: renderer::ImageID,
-        pixels: Vec<u8>,
+        pixels: sync::Arc<[u8]>,
         region: utils::Rectangle,
     ) -> Self {
         Self {
@@ -54,7 +56,7 @@ impl WritePixelsArg {
     }
 
     pub(crate) fn clear_pixels(&mut self) {
-        self.pixels.clear();
+        self.pixels = [].into();
     }
 }
 
