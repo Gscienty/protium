@@ -1,5 +1,5 @@
 use super::{BufferID, ProgramID, VertexArrayID, glhandler};
-use std::{cell, collections, sync};
+use std::{cell, collections, mem, sync};
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct GLVertexLayoutPart {
@@ -8,10 +8,10 @@ pub struct GLVertexLayoutPart {
 }
 
 impl GLVertexLayoutPart {
-    pub fn new(elements_count: usize, size: usize) -> Self {
+    pub fn new(elements_count: usize) -> Self {
         Self {
             elements_count,
-            size,
+            size: elements_count * mem::size_of::<f32>(),
         }
     }
 }
@@ -27,6 +27,7 @@ pub trait GLVertexEntity {
 #[derive(Debug, Clone, PartialEq)]
 pub struct GLVertexLayout {
     parts: sync::Arc<[GLVertexLayoutPart]>,
+    elements_count: usize,
     size: usize,
 }
 
@@ -39,13 +40,17 @@ impl GLVertexLayout {
     }
 
     pub fn new_with_parts(parts: sync::Arc<[GLVertexLayoutPart]>) -> Self {
-        let size = parts.iter().fold(0, |acc, part| acc + part.size);
+        let elements_count = parts.iter().fold(0, |acc, part| acc + part.elements_count);
 
-        Self { parts, size }
+        Self {
+            parts,
+            elements_count,
+            size: elements_count * mem::size_of::<f32>(),
+        }
     }
 
-    pub(crate) fn get_size(&self) -> usize {
-        self.size
+    pub(crate) fn get_elements_count(&self) -> usize {
+        self.elements_count
     }
 
     pub(super) fn enable(&self, hdr: &glhandler::GLHandler) {

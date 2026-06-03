@@ -37,9 +37,9 @@ fn create_shader(renderer: &renderer::Renderer) -> renderer::Shader {
         false,
         renderer::GLVertexLayout::new_with_parts(
             [
-                renderer::GLVertexLayoutPart::new(2, 8),
-                renderer::GLVertexLayoutPart::new(2, 8),
-                renderer::GLVertexLayoutPart::new(4, 16),
+                renderer::GLVertexLayoutPart::new(2),
+                renderer::GLVertexLayoutPart::new(2),
+                renderer::GLVertexLayoutPart::new(4),
             ]
             .into(),
         ),

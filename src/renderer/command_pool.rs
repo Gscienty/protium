@@ -125,13 +125,13 @@ impl CommandPool {
 
         if !need_split
             && let Some(command::Command::InternalDrawTriangles(last)) = self.commands.back_mut()
-            && last.mergeable(&self.vertices, &cmd, &uniforms, layout.get_size())
+            && last.mergeable(&self.vertices, &cmd, &uniforms, layout.get_elements_count())
         {
             last.merge(&cmd);
 
             self.append_indexes(
                 cmd.get_indexes(),
-                (self.segment_vertices_count / layout.get_size()) as u32,
+                (self.segment_vertices_count / layout.get_elements_count()) as u32,
             );
             self.segment_vertices_count += appended_vertices_count;
 

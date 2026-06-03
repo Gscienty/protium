@@ -22,7 +22,7 @@ fn create_shader(renderer: &renderer::Renderer) -> renderer::Shader {
         CLEAR_VERTEX_SHADER_SOURCE.to_owned(),
         CLEAR_FRAGMENT_SHADER_SOURCE.to_owned(),
         false,
-        renderer::GLVertexLayout::new_with_parts([renderer::GLVertexLayoutPart::new(2, 8)].into()),
+        renderer::GLVertexLayout::new_with_parts([renderer::GLVertexLayoutPart::new(2)].into()),
         Box::new(|vertices, _, (offset_x, offset_y)| {
             for i in (0..vertices.len()).step_by(2) {
                 vertices[i] += offset_x;
