@@ -23,7 +23,9 @@ impl Shader {
         }
     }
 
-    pub(super) fn iter_uniform_types(&self) -> slice::Iter<(String, shader_type::ShaderType)> {
+    pub(super) fn iter_uniform_types(
+        &'_ self,
+    ) -> slice::Iter<'_, (String, shader_type::ShaderType)> {
         self.uniform_types.iter()
     }
 

@@ -38,10 +38,6 @@ fn create_shader(renderer: &renderer::Renderer) -> renderer::Shader {
                 "destination_atlas_size".to_owned(),
                 renderer::ShaderBasicType::Vec2.into(),
             ),
-            (
-                "source_size".to_owned(),
-                renderer::ShaderBasicType::Vec2.into(),
-            ),
         ]
         .into(),
     )
