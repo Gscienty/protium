@@ -90,5 +90,30 @@ unsafe extern "C" {
 //     //
 //     // atlas::flush(true);
 //
+//     // let font_img = Image::new(2, 2, ImageType::Regular);
+//     // font_img.write_pixels(
+//     //     [
+//     //         0xff, 0x00, 0x00, 0xff, //
+//     //         0x00, 0xff, 0x00, 0xff, //
+//     //         0x00, 0x00, 0xff, 0xff, //
+//     //         0xff, 0xff, 0xff, 0xff, //
+//     //     ]
+//     //     .into(),
+//     // );
+//
+//     // atlas::begin_frame();
+//     // // let offscreen = Image::new(800, 600, ImageType::Volatile);
+//     // //let copy_offscreen = offscreen.clone();
+//     //
+//     // let mut option = DrawOption::default();
+//     // option.set_geom(GeoM::default().scale(50., 50.).translate(400., 300.));
+//     // // offscreen.draw(&font_img, option);
+//     //
+//     // let screen = Image::new(800, 600, ImageType::Screen);
+//     // screen.draw(&font_img, option);
+//     //
+//     // atlas::end_frame();
+//     // atlas::flush(true);
+//
 //     run_game(MockGame { font_img })
 // }

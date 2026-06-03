@@ -41,7 +41,7 @@ impl Image {
         let (_, cr, cg, cb, ca) = option.colorm.to_scale();
         let (cr, cg, cb, ca) = option.color_scale.apply(cr, cb, cg, ca);
 
-        let Ok(source) = source.image.lock() else {
+        let Ok(source_image) = source.image.lock() else {
             return;
         };
 
@@ -58,14 +58,16 @@ impl Image {
         .unwrap_or(0);
 
         target.draw(
-            source
+            source_image
                 .as_ref()
-                .map(|source| source.into_draw_source_arg("source", self.adjust_bounds()))
+                .map(|source_image| source_image.draw_source_arg("source", source.adjust_bounds()))
                 .into_iter()
                 .collect(),
             utils::builtin_shader::nearest_quad_vertices_from_src_atlas(
-                sx0 as f32, sy0 as f32, sx1 as f32, sy1 as f32, geom.a, geom.b, geom.c, geom.d,
-                geom.tx, geom.ty, cr, cg, cb, ca,
+                sx0 as f32, sy0 as f32, sx1 as f32, sy1 as f32, //
+                geom.a, geom.b, geom.c, geom.d, //
+                geom.tx, geom.ty, //
+                cr, cg, cb, ca,
             )
             .to_vec(),
             [0, 1, 2, 1, 2, 3].into(),

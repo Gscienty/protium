@@ -29,10 +29,20 @@ fn create_shader(renderer: &renderer::Renderer) -> renderer::Shader {
                 vertices[i + 1] += offset_y;
             }
         }),
-        [(
-            "projection".to_owned(),
-            renderer::ShaderBasicType::Mat4.into(),
-        )]
+        [
+            (
+                "projection".to_owned(),
+                renderer::ShaderBasicType::Mat4.into(),
+            ),
+            (
+                "destination_atlas_size".to_owned(),
+                renderer::ShaderBasicType::Vec2.into(),
+            ),
+            (
+                "source_size".to_owned(),
+                renderer::ShaderBasicType::Vec2.into(),
+            ),
+        ]
         .into(),
     )
 }
@@ -41,30 +51,6 @@ static SHADER: sync::OnceLock<renderer::Shader> = sync::OnceLock::new();
 
 pub(crate) fn get_clear_shader(renderer: &renderer::Renderer) -> &renderer::Shader {
     SHADER.get_or_init(|| create_shader(renderer))
-}
-
-pub(crate) fn get_clear_uniform(region: (i32, i32)) -> sync::Arc<[u8]> {
-    vec![
-        (2. / region.0 as f32),
-        0.,
-        0.,
-        0.,
-        0.,
-        (2. / region.1 as f32),
-        0.,
-        0.,
-        0.,
-        0.,
-        1.,
-        0.,
-        -1.,
-        -1.,
-        0.,
-        1.,
-    ]
-    .into_iter()
-    .flat_map(|v| v.to_ne_bytes())
-    .collect()
 }
 
 pub fn clear_quad_vertices_from_dst_src(

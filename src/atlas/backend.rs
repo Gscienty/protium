@@ -113,6 +113,7 @@ impl BackendData {
         );
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub(super) fn draw(
         &self,
         sources: sync::Arc<[command::DrawSourceArg]>,
@@ -173,6 +174,7 @@ impl Backend {
         data.write_pixels(pixels, region);
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub(super) fn draw(
         &self,
         sources: sync::Arc<[image::DrawSourceArg]>,
@@ -188,7 +190,7 @@ impl Backend {
 
         data.draw(
             sources
-                .into_iter()
+                .iter()
                 .filter_map(|source| {
                     let image_id = source.get_image_id()?;
                     Some(command::DrawSourceArg::new(source.get_name(), image_id))

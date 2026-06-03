@@ -27,6 +27,8 @@ pub enum LayoutVertexOffset {
     Source(usize),
 }
 
+type LayoutVertexOffsetFn = Box<dyn Fn(&mut [f32], LayoutVertexOffset, (f32, f32))>;
+
 pub(crate) struct Renderer {
     next_image_id: sync::atomic::AtomicUsize,
     next_shader_id: sync::atomic::AtomicUsize,
@@ -35,9 +37,7 @@ pub(crate) struct Renderer {
 
     max_texture_size: i32,
 
-    layouts: tokio::sync::Mutex<
-        collections::BTreeMap<ShaderID, Box<dyn Fn(&mut [f32], LayoutVertexOffset, (f32, f32))>>,
-    >,
+    layouts: tokio::sync::Mutex<collections::BTreeMap<ShaderID, LayoutVertexOffsetFn>>,
 }
 
 impl Renderer {
@@ -88,7 +88,7 @@ impl Renderer {
         fragment_source: String,
         texels: bool,
         vertex_layout: driver::GLVertexLayout,
-        vertex_destination_offset: Box<dyn Fn(&mut [f32], LayoutVertexOffset, (f32, f32))>,
+        vertex_destination_offset: LayoutVertexOffsetFn,
         uniforms: sync::Arc<[(String, driver::ShaderType)]>,
     ) -> shader::Shader {
         let id = self

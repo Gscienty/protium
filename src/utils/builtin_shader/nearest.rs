@@ -64,6 +64,10 @@ fn create_shader(renderer: &renderer::Renderer) -> renderer::Shader {
                 renderer::ShaderBasicType::Mat4.into(),
             ),
             (
+                "destination_atlas_size".to_owned(),
+                renderer::ShaderBasicType::Vec2.into(),
+            ),
+            (
                 "source_size".to_owned(),
                 renderer::ShaderBasicType::Vec2.into(),
             ),
@@ -78,34 +82,7 @@ pub(crate) fn get_nearest_shader(renderer: &renderer::Renderer) -> &renderer::Sh
     SHADER.get_or_init(|| create_shader(renderer))
 }
 
-pub(crate) fn get_nearest_uniform(dst_view: (i32, i32), src_view: (i32, i32)) -> sync::Arc<[u8]> {
-    [
-        // projection
-        (2. / dst_view.0 as f32),
-        0.,
-        0.,
-        0.,
-        0.,
-        (2. / dst_view.1 as f32),
-        0.,
-        0.,
-        0.,
-        0.,
-        1.,
-        0.,
-        -1.,
-        -1.,
-        0.,
-        1.,
-        // source_size
-        src_view.0 as f32,
-        src_view.1 as f32,
-    ]
-    .into_iter()
-    .flat_map(|v| v.to_ne_bytes())
-    .collect()
-}
-
+#[allow(clippy::too_many_arguments)]
 pub fn nearest_quad_vertices_from_dst_src(
     dx0: f32,
     dy0: f32,
@@ -134,6 +111,7 @@ pub fn nearest_quad_vertices_from_dst_src(
     .into()
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn nearest_quad_vertices_from_src_atlas(
     sx0: f32,
     sy0: f32,

@@ -1,5 +1,5 @@
 use crate::{Image, ImageType, utils};
-use std::{ptr, slice, sync};
+use std::{slice, sync};
 
 pub struct Span {
     font: sync::Arc<fontdue::Font>,

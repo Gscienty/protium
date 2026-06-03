@@ -158,9 +158,9 @@ impl CommandPool {
         sources: &[DrawSourceArg],
         uniforms: &[u8],
     ) -> sync::Arc<[u8]> {
-        let mut prepend_uniforms = Vec::with_capacity(16 + sources.len() * 2);
+        let mut prepend_uniforms = Vec::with_capacity(18 + sources.len() * 2);
         if let Some(destination) = images.get(&destination) {
-            let (w, h) = destination.viewport_size();
+            let (w, h) = destination.get_viewport_size();
             prepend_uniforms.extend([
                 (2. / w as f32),
                 0.,
@@ -178,16 +178,18 @@ impl CommandPool {
                 -1.,
                 0.,
                 1.,
+                w as f32,
+                h as f32,
             ])
         } else {
-            prepend_uniforms.extend([0.; 16]);
+            prepend_uniforms.extend([0.; 18]);
         }
         for source in sources.iter() {
             let Some(source) = images.get(&source.get_image()) else {
                 prepend_uniforms.extend([0.; 2]);
                 continue;
             };
-            let (w, h) = source.viewport_size();
+            let (w, h) = source.get_size();
             prepend_uniforms.extend([w as f32, h as f32]);
         }
 

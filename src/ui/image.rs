@@ -28,7 +28,7 @@ impl Image {
         self.image.get_size()
     }
 
-    pub(crate) fn into_draw_source_arg(
+    pub(crate) fn draw_source_arg(
         &self,
         name: &str,
         source_region: utils::Rectangle,
@@ -36,6 +36,7 @@ impl Image {
         atlas::DrawSourceArg::from(&self.image, name, source_region)
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub(crate) fn draw(
         &mut self,
         sources: Vec<atlas::DrawSourceArg>,

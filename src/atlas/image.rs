@@ -438,7 +438,7 @@ impl Image {
         let Some(node) = page.borrow_mut().alloc(wp, hp) else {
             return;
         };
-        let image = material.get_renderer().create_image(wp, hp, false);
+        let image = material.get_renderer().create_image(width, height, false);
         let id = image.get_id();
 
         let backend = backend::Backend::new(image, Some(page), as_source);

@@ -46,7 +46,11 @@ impl Image {
         }
     }
 
-    pub(crate) const fn viewport_size(&self) -> (i32, i32) {
+    pub(crate) const fn get_size(&self) -> (i32, i32) {
+        (self.width, self.height)
+    }
+
+    pub(crate) const fn get_viewport_size(&self) -> (i32, i32) {
         if self.is_screen {
             (self.width, self.height)
         } else {
@@ -118,7 +122,7 @@ impl Image {
 
     pub(super) fn set_viewport(&self, graphics: &graphics::Graphics) -> Result<(), ()> {
         let framebuffer = self.ensure_framebuffer(graphics)?;
-        let (width, height) = self.viewport_size();
+        let (width, height) = self.get_viewport_size();
         graphics
             .get_context()
             .set_viewport(graphics.get_handler(), framebuffer, width, height);
@@ -153,7 +157,7 @@ impl Image {
 
         let framebuffer = self.ensure_framebuffer(graphics)?;
 
-        let (width, height) = self.viewport_size();
+        let (width, height) = self.get_viewport_size();
         let renderbuffer =
             graphics
                 .get_context()

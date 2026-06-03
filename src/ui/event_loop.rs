@@ -31,7 +31,7 @@ pub(crate) struct EventLoop<G>
 where
     G: game::Game,
 {
-    context: sync::Mutex<UIContext<G>>,
+    context: tokio::sync::Mutex<UIContext<G>>,
 
     fps_mode: fps::FPSMode,
     last_flush_buffer_time: sync::atomic::AtomicU64,
@@ -46,7 +46,7 @@ where
 {
     pub fn new(game: G) -> sync::Arc<Self> {
         sync::Arc::new(Self {
-            context: sync::Mutex::new(UIContext {
+            context: tokio::sync::Mutex::new(UIContext {
                 game,
                 offscreen: sync::Arc::new(sync::Mutex::new(None)),
                 screen: sync::Arc::new(sync::Mutex::new(None)),
