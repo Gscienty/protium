@@ -295,7 +295,16 @@ impl Page {
                 let Some(root) = &self.root else {
                     return None;
                 };
-                if let Some(node) = NodeInner::alloc(root, new_width, new_height) {
+                // Allocate the *requested* `width × height`, not the page size
+                // (`new_width × new_height`). On an empty page the latter would
+                // greedily consume the whole freshly-doubled page even when it
+                // is still smaller than the request in one dimension (e.g.
+                // doubling 1024×1024 to 2048×1024 for a 2501×2001 request),
+                // yielding a node — and therefore a backing texture — that is
+                // too small. Subsequent `write_pixels` into the tail of the
+                // image then overflow the texture dimensions
+                // (`glTexSubImage2D: Offset overflows texture dimensions`).
+                if let Some(node) = NodeInner::alloc(root, width, height) {
                     return Some(node);
                 }
                 rollback.apply(self);
@@ -645,5 +654,30 @@ mod tests {
                 }
             }
         }
+    }
+
+    /// Regression test for `extend_and_alloc` returning a node smaller than
+    /// the request. Previously, after doubling the page, it allocated the
+    /// *page* dimensions (`new_width × new_height`) instead of the requested
+    /// `width × height`. On an empty page the first viable doubling (e.g.
+    /// 256×256 → 512×256 for a 300×300 request) was greedily consumed as a
+    /// 512×256 node — smaller than the 300×300 request in the height axis —
+    /// causing downstream texture overflows.
+    #[test]
+    fn test_extend_and_alloc_node_covers_request() {
+        // Page starts at 256×256, must grow to fit a 300×300 request.
+        let mut p = Page::new(256, 256, 1024);
+
+        let node = p.alloc(300, 300).expect("should fit after extension");
+        let region = node.borrow().region;
+
+        // The allocated node must fully cover the requested 300×300.
+        assert!(
+            region.get_width() >= 300 && region.get_height() >= 300,
+            "node {region:?} is smaller than the 300×300 request"
+        );
+        // The page must have grown enough to contain the node.
+        let (pw, ph) = p.size();
+        assert!(pw >= region.max.x && ph >= region.max.y);
     }
 }
