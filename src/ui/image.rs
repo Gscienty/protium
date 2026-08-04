@@ -66,7 +66,7 @@ impl Image {
 
     pub(crate) fn clear(&mut self) {
         let (width, height) = self.get_size();
-        self.fill(utils::Rectangle::new(0, 0, width, height), (0., 0., 0., 0.));
+        self.fill(utils::Rectangle::new(0, 0, width, height), (0., 0., 0., 1.));
     }
 
     pub(crate) fn fill(
